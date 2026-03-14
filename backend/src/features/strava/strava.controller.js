@@ -40,8 +40,18 @@ const callback = async (req, res) => {
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8081';
         res.redirect(`${frontendUrl}/dashboard?token=${userToken}`);
     } catch (err) {
-        console.error('Error during Strava OAuth callback:', err.message);
-        res.status(500).json({ error: 'Internal Server Error during authentication' });
+        console.error('--- STRAVA AUTH ERROR ---');
+        console.error('Message:', err.message);
+        if (err.response) {
+            console.error('Strava API Response Data:', err.response.data);
+            console.error('Strava API Response Status:', err.response.status);
+        }
+        console.error('--------------------------');
+        res.status(500).json({
+            error: 'Internal Server Error during authentication',
+            details: err.message,
+            strava_msg: err.response?.data?.message
+        });
     }
 };
 
