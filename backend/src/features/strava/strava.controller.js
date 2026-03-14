@@ -3,7 +3,7 @@ const stravaService = require('./strava.service');
 
 const login = (req, res) => {
     // The frontend should send its base redirect URL (e.g., http://localhost:8081 or exp://192.168.1.5:8081)
-    const returnTo = req.query.redirect_uri || process.env.FRONTEND_URL || 'http://localhost:8081';
+    const returnTo = req.query.redirect_uri || process.env.FRONTEND_URL;
     const authUrl = stravaService.getAuthUrl(returnTo);
     res.redirect(authUrl);
 };
@@ -30,7 +30,7 @@ const callback = async (req, res) => {
         }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
         // Redirect back to the dynamic return URL provided in 'state'
-        const baseUrl = state || process.env.FRONTEND_URL || 'http://localhost:8081';
+        const baseUrl = state || process.env.FRONTEND_URL;
 
         // Ensure there is no trailing slash for consistency
         const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;

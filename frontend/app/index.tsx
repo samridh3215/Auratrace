@@ -6,7 +6,10 @@ import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+if (!API_URL) {
+    throw new Error("EXPO_PUBLIC_API_URL is not defined in the environment.");
+}
 
 export default function LoginScreen() {
     const router = useRouter();

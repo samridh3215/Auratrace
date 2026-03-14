@@ -18,7 +18,7 @@ type ActivityData = {
     start_date: string;
 };
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = process.env.EXPO_PUBLIC_API_URL as string;
 
 // Formatter Helpers
 const formatDuration = (seconds: number) => {
