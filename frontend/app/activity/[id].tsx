@@ -123,15 +123,10 @@ export default function ActivityDetailScreen() {
         }
     }, [itemData]);
 
-    if (!activity) {
-        return (
-            <View style={styles.container}>
-                <Text style={{ color: '#FFF' }}>Loading...</Text>
-            </View>
-        );
-    }
-
     const hasRoute = routeCoords.length > 0;
+    const platform = Platform.OS;
+    const windowWidth = Dimensions.get('window').width;
+    const mapHeight = Dimensions.get('window').height * 0.45;
 
     // Fit map to coordinates on load
     useEffect(() => {
@@ -144,11 +139,15 @@ export default function ActivityDetailScreen() {
                 });
             }, 500);
         }
-    }, [hasRoute, routeCoords, viewMode]);
+    }, [hasRoute, routeCoords, viewMode, platform]);
 
-    const platform = Platform.OS;
-    const windowWidth = Dimensions.get('window').width;
-    const mapHeight = Dimensions.get('window').height * 0.45;
+    if (!activity) {
+        return (
+            <View style={styles.container}>
+                <Text style={{ color: '#FFF' }}>Loading...</Text>
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
