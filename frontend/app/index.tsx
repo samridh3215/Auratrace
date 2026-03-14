@@ -1,23 +1,38 @@
+import { useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
 import { Activity } from 'lucide-react-native';
 import * as WebBrowser from 'expo-web-browser';
+import * as SecureStore from 'expo-secure-store';
+import { useRouter } from 'expo-router';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
 export default function LoginScreen() {
+    const router = useRouter();
+
+    useEffect(() => {
+        checkExistingAuth();
+    }, []);
+
+    const checkExistingAuth = async () => {
+        const token = Platform.OS === 'web'
+            ? localStorage.getItem('user_token')
+            : await SecureStore.getItemAsync('user_token');
+
+        if (token) {
+            router.replace('/dashboard');
+        }
+    };
 
     const handleLogin = async () => {
-        const loginUrl = `${API_URL}/strava/login`;
+        const device = Platform.OS === 'web' ? 'web' : 'mobile';
+        const loginUrl = `${API_URL}/strava/login?device=${device}`;
+
         if (Platform.OS === 'web') {
             window.location.href = loginUrl;
         } else {
-            // For native devices, use Expo WebBrowser
             try {
                 await WebBrowser.openBrowserAsync(loginUrl);
-                // Note: The backend currently redirects to http://localhost:8081/dashboard.
-                // For a true native flow, the backend would need to redirect to the app's deep link 
-                // scheme (e.g., frontend://dashboard) which expo-auth-session usually handles.
-                // But this fixes the immediate crash.
             } catch (error) {
                 console.error("Error opening browser:", error);
             }

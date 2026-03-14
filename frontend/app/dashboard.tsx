@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, Pressable, Platform } from 'react-native';
 import axios from 'axios';
 import { Activity as ActivityIcon, Bike, Footprints, Clock, Flame, Heart, ChevronLeft, Settings, Navigation, Route } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 
 // Types
 type ActivityData = {
@@ -36,24 +37,57 @@ export default function DashboardScreen() {
     const [loggingOut, setLoggingOut] = useState(false);
     const [error, setError] = useState('');
     const router = useRouter();
+    const { token: urlToken } = useLocalSearchParams<{ token?: string }>();
 
     useEffect(() => {
-        fetchActivities();
-    }, []);
+        handleAuthentication();
+    }, [urlToken]);
 
-    const fetchActivities = async () => {
+    const handleAuthentication = async () => {
+        let activeToken = urlToken;
+
+        // 1. If we have a token in the URL (from redirect), save it
+        if (activeToken) {
+            if (Platform.OS === 'web') {
+                localStorage.setItem('user_token', activeToken);
+                // Clean URL by removing the token
+                router.setParams({ token: undefined });
+            } else {
+                await SecureStore.setItemAsync('user_token', activeToken);
+            }
+        }
+        // 2. If no URL token, check storage
+        else {
+            const storedToken = Platform.OS === 'web'
+                ? localStorage.getItem('user_token')
+                : await SecureStore.getItemAsync('user_token');
+            activeToken = storedToken || undefined;
+        }
+
+        if (!activeToken) {
+            router.replace('/');
+            return;
+        }
+
+        fetchActivities(activeToken);
+    };
+
+    const fetchActivities = async (token: string) => {
+        setLoading(true);
+        setError('');
         try {
-            // Use withCredentials to ensure the session cookie is sent to the backend
             const response = await axios.get(`${API_URL}/strava/activities`, {
-                withCredentials: true
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
             });
             setActivities(response.data.activities || []);
             setLoading(false);
         } catch (err: any) {
             console.error(err);
             if (err.response?.status === 401) {
-                // Session expired or missing login
-                router.replace('/');
+                // Token invalid or expired
+                handleLogout();
             } else {
                 setError('Failed to load activities. Please try again.');
                 setLoading(false);
@@ -64,7 +98,11 @@ export default function DashboardScreen() {
     const handleLogout = async () => {
         setLoggingOut(true);
         try {
-            await axios.get(`${API_URL}/strava/logout`, { withCredentials: true });
+            if (Platform.OS === 'web') {
+                localStorage.removeItem('user_token');
+            } else {
+                await SecureStore.deleteItemAsync('user_token');
+            }
             router.replace('/');
         } catch (err) {
             console.error('Logout failed:', err);
@@ -156,7 +194,7 @@ export default function DashboardScreen() {
             ) : error ? (
                 <View style={styles.centerBox}>
                     <Text style={styles.errorText}>{error}</Text>
-                    <Pressable style={styles.retryBtn} onPress={fetchActivities}>
+                    <Pressable style={styles.retryBtn} onPress={() => handleAuthentication()}>
                         <Text style={styles.retryBtnText}>Retry</Text>
                     </Pressable>
                 </View>

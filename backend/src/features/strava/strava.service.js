@@ -1,12 +1,18 @@
 const axios = require('axios');
 
-const getAuthUrl = () => {
+const getAuthUrl = (state) => {
     const clientId = process.env.STRAVA_CLIENT_ID;
     const redirectUri = process.env.STRAVA_REDIRECT_URI;
     // activity:read_all scope needed to list activities
     const scope = 'read,activity:read_all';
 
-    return `https://www.strava.com/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&approval_prompt=force`;
+    let url = `https://www.strava.com/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&approval_prompt=force`;
+
+    if (state) {
+        url += `&state=${encodeURIComponent(state)}`;
+    }
+
+    return url;
 };
 
 const exchangeCodeForToken = async (code) => {
