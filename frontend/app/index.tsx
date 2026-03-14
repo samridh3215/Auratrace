@@ -4,6 +4,7 @@ import { Activity } from 'lucide-react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
+import * as Linking from 'expo-linking';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
@@ -25,8 +26,10 @@ export default function LoginScreen() {
     };
 
     const handleLogin = async () => {
-        const device = Platform.OS === 'web' ? 'web' : 'mobile';
-        const loginUrl = `${API_URL}/strava/login?device=${device}`;
+        // This will create 'http://localhost:8081' on web 
+        // and 'exp://192.168.x.x:8081' or 'auratrace://' on mobile
+        const redirectUri = Linking.createURL('/');
+        const loginUrl = `${API_URL}/strava/login?redirect_uri=${encodeURIComponent(redirectUri)}`;
 
         if (Platform.OS === 'web') {
             window.location.href = loginUrl;

@@ -2,9 +2,9 @@ const jwt = require('jsonwebtoken');
 const stravaService = require('./strava.service');
 
 const login = (req, res) => {
-    // Determine if the request is from a mobile app or web
-    const device = req.query.device || 'web'; // 'web' or 'mobile'
-    const authUrl = stravaService.getAuthUrl(device);
+    // The frontend should send its base redirect URL (e.g., http://localhost:8081 or exp://192.168.1.5:8081)
+    const returnTo = req.query.redirect_uri || process.env.FRONTEND_URL || 'http://localhost:8081';
+    const authUrl = stravaService.getAuthUrl(returnTo);
     res.redirect(authUrl);
 };
 
@@ -29,16 +29,13 @@ const callback = async (req, res) => {
             athlete: tokenData.athlete
         }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-        // If mobile, redirect to deep link scheme
-        if (state === 'mobile') {
-            const scheme = process.env.APP_SCHEME || 'auratrace';
-            return res.redirect(`${scheme}://dashboard?token=${userToken}`);
-        }
+        // Redirect back to the dynamic return URL provided in 'state'
+        const baseUrl = state || process.env.FRONTEND_URL || 'http://localhost:8081';
 
-        // TODO: Update FRONTEND_URL in .env when hosting the frontend (e.g., on Vercel)
-        // Otherwise redirect to web frontend with token in fragment (or query)
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8081';
-        res.redirect(`${frontendUrl}/dashboard?token=${userToken}`);
+        // Ensure there is no trailing slash for consistency
+        const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+
+        res.redirect(`${cleanBaseUrl}/dashboard?token=${userToken}`);
     } catch (err) {
         console.error('--- STRAVA AUTH ERROR ---');
         console.error('Message:', err.message);
