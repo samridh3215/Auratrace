@@ -37,12 +37,19 @@ const fetchActivities = async (accessToken) => {
             Authorization: `Bearer ${accessToken}`
         },
         params: {
-            per_page: 30 // Defaulting to 30 activities
+            per_page: 50 // Increased to 50 to ensure we get enough after filtering
         }
     };
 
     const response = await axios.get(url, config);
-    return response.data;
+
+    // Filter to only include specific types
+    const allowedTypes = ['Run', 'Walk', 'Ride'];
+    const filteredActivities = response.data.filter(activity =>
+        allowedTypes.includes(activity.type)
+    );
+
+    return filteredActivities;
 };
 
 module.exports = {
