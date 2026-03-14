@@ -16,6 +16,10 @@ type ActivityData = {
     average_heartrate?: number;
     calories?: number;
     start_date: string;
+    map?: {
+        id: string;
+        summary_polyline: string;
+    };
 };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL as string;
@@ -33,15 +37,27 @@ const formatDistance = (meters: number) => {
 
 export default function DashboardScreen() {
     const [activities, setActivities] = useState<ActivityData[]>([]);
+    const [filteredActivities, setFilteredActivities] = useState<ActivityData[]>([]);
+    const [selectedFilter, setSelectedFilter] = useState<string>('All');
     const [loading, setLoading] = useState(true);
     const [loggingOut, setLoggingOut] = useState(false);
     const [error, setError] = useState('');
     const router = useRouter();
     const { token: urlToken } = useLocalSearchParams<{ token?: string }>();
 
+    const filterOptions = ['All', 'Run', 'Walk', 'Ride'];
+
     useEffect(() => {
         handleAuthentication();
     }, [urlToken]);
+
+    useEffect(() => {
+        if (selectedFilter === 'All') {
+            setFilteredActivities(activities);
+        } else {
+            setFilteredActivities(activities.filter(a => a.type === selectedFilter));
+        }
+    }, [activities, selectedFilter]);
 
     const handleAuthentication = async () => {
         let activeToken = urlToken;
@@ -133,7 +149,15 @@ export default function DashboardScreen() {
         const hr = item.average_heartrate || (120 + Math.round(Math.random() * 40));
 
         return (
-            <View style={styles.card}>
+            <Pressable
+                style={({ pressed }) => [styles.card, pressed && { opacity: 0.8 }]}
+                onPress={() => {
+                    router.push({
+                        pathname: `/activity/[id]`,
+                        params: { id: item.id, itemData: JSON.stringify(item) }
+                    });
+                }}
+            >
                 <View style={styles.cardHeader}>
                     <View style={styles.activityTypeContainer}>
                         {renderIcon(item.type)}
@@ -169,7 +193,7 @@ export default function DashboardScreen() {
                         <Text style={styles.metricLabel}>{hr} bpm</Text>
                     </View>
                 </View>
-            </View>
+            </Pressable>
         );
     };
 
@@ -186,6 +210,27 @@ export default function DashboardScreen() {
                 </Pressable>
             </View>
 
+            {/* Filter Pills */}
+            <View style={styles.filterContainer}>
+                {filterOptions.map(option => (
+                    <Pressable
+                        key={option}
+                        style={[
+                            styles.filterPill,
+                            selectedFilter === option && styles.filterPillActive
+                        ]}
+                        onPress={() => setSelectedFilter(option)}
+                    >
+                        <Text style={[
+                            styles.filterText,
+                            selectedFilter === option && styles.filterTextActive
+                        ]}>
+                            {option}
+                        </Text>
+                    </Pressable>
+                ))}
+            </View>
+
             {loading ? (
                 <View style={styles.centerBox}>
                     <ActivityIndicator size="large" color="#2D60FF" />
@@ -200,7 +245,7 @@ export default function DashboardScreen() {
                 </View>
             ) : (
                 <FlatList
-                    data={activities}
+                    data={filteredActivities}
                     keyExtractor={(item) => item.id.toString()}
                     renderItem={renderItem}
                     contentContainerStyle={styles.listContent}
@@ -227,7 +272,33 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingTop: Platform.OS === 'web' ? 24 : 60,
         paddingHorizontal: 20,
-        paddingBottom: 20,
+        paddingBottom: 16,
+    },
+    filterContainer: {
+        flexDirection: 'row',
+        paddingHorizontal: 20,
+        marginBottom: 16,
+        gap: 12,
+    },
+    filterPill: {
+        paddingVertical: 8,
+        paddingHorizontal: 20,
+        borderRadius: 24,
+        backgroundColor: '#1C1C24',
+        borderWidth: 1,
+        borderColor: '#2D3246',
+    },
+    filterPillActive: {
+        backgroundColor: '#2D60FF',
+        borderColor: '#2D60FF',
+    },
+    filterText: {
+        color: '#8A8D9F',
+        fontWeight: '600',
+        fontSize: 14,
+    },
+    filterTextActive: {
+        color: '#FFFFFF',
     },
     headerIconBtn: {
         width: 44,
