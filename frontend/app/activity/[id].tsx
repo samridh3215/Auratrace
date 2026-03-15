@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Platform, Dimensions, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Map as MapIcon, Info, Route, Flame, Heart, Zap, Play, Activity as ActivityIcon } from 'lucide-react-native';
+import { ChevronLeft, Zap, Target, Timer, Maximize, Activity, Navigation, Mountain, Flame, Info, Map as MapIcon, Route, Heart, Play, Activity as ActivityIcon } from 'lucide-react-native';
 import Svg, { Polyline as SvgPolyline } from 'react-native-svg';
 import polylineLib from '@mapbox/polyline';
 import RouteMap from '../components/RouteMap';
