@@ -114,6 +114,7 @@ export default function ActivityDetailScreen() {
     const [streamsLoaded, setStreamsLoaded] = useState(false);
     const [chartsLoading, setChartsLoading] = useState(false);
     const [streamsData, setStreamsData] = useState<any>(null);
+    const [streamsError, setStreamsError] = useState(false);
 
     const fetchStreams = async () => {
         if (!id) return;
@@ -134,11 +135,10 @@ export default function ActivityDetailScreen() {
                 setStreamsLoaded(true);
             }
         } catch (error: any) {
-            console.error('Failed to load streams', error);
-            if (error.response?.status === 404) {
-                // Strava returns 404 if streams are unavailable (e.g. manual entry)
-                setStreamsData(null);
-            }
+            console.error('Failed to load streams \n', error.message);
+            // Whether it's a 404 or Strava just doesn't have the data, show fallback UI
+            setStreamsError(true);
+            setStreamsData(null);
         } finally {
             setChartsLoading(false);
         }
@@ -316,7 +316,7 @@ export default function ActivityDetailScreen() {
                 <View style={styles.card}>
                     <Text style={styles.sectionTitle}>Charts</Text>
 
-                    {!streamsLoaded && !chartsLoading && (
+                    {!streamsLoaded && !chartsLoading && !streamsError && (
                         <Pressable style={styles.loadChartsButton} onPress={fetchStreams}>
                             <Zap color="#FFF" size={20} />
                             <Text style={styles.loadChartsText}>Load Advanced Metrics</Text>
@@ -326,6 +326,16 @@ export default function ActivityDetailScreen() {
                     {chartsLoading && (
                         <View style={styles.chartPlaceholder}>
                             <Text style={styles.chartText}>Loading stream data...</Text>
+                        </View>
+                    )}
+
+                    {streamsError && (
+                        <View style={styles.chartPlaceholder}>
+                            <Info color="#4A4C59" size={24} />
+                            <Text style={[styles.chartText, { marginTop: 8 }]}>No Advanced Metrics Available.</Text>
+                            <Text style={{ color: '#8A8D9F', fontSize: 13, textAlign: 'center', marginTop: 4 }}>
+                                Manual activities or short walks may not have high-resolution stream data recorded.
+                            </Text>
                         </View>
                     )}
 
