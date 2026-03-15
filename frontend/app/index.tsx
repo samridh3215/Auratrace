@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
-import { Activity } from 'lucide-react-native';
+import { View, Text, StyleSheet, Pressable, Platform, Image } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
@@ -53,19 +52,23 @@ export default function LoginScreen() {
 
             <View style={styles.content}>
                 <View style={styles.header}>
-                    <Activity size={100} color="#2D60FF" strokeWidth={1} />
+                    <Image source={require('../assets/images/app-icon.png')} style={styles.logo} resizeMode="contain" />
                     <Text style={styles.title}>Auratrace</Text>
                     <Text style={styles.subtitle}>Relive every step.</Text>
                 </View>
 
                 <Pressable
                     style={({ pressed }) => [
-                        styles.button,
+                        styles.stravaButton,
                         pressed && styles.buttonPressed
                     ]}
                     onPress={handleLogin}
                 >
-                    <Text style={styles.buttonText}>Connect with Strava</Text>
+                    <Image
+                        source={require('../assets/images/strava_login.png')}
+                        style={styles.stravaButtonImage}
+                        resizeMode="contain"
+                    />
                 </Pressable>
             </View>
         </View>
@@ -109,6 +112,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: 80,
     },
+    logo: {
+        width: 120,
+        height: 120,
+    },
     title: {
         fontSize: 48,
         fontWeight: '800',
@@ -122,31 +129,18 @@ const styles = StyleSheet.create({
         marginTop: 8,
         fontWeight: '500',
     },
-    button: {
-        backgroundColor: '#1C1C24',
-        borderWidth: 1,
-        borderColor: '#2D3246',
-        paddingVertical: 18,
-        paddingHorizontal: 40,
-        borderRadius: 40,
+    stravaButton: {
         width: '100%',
-        flexDirection: 'row',
+        height: 60,
         alignItems: 'center',
         justifyContent: 'center',
-        shadowColor: '#FC4C02',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 20,
-        elevation: 10,
+    },
+    stravaButtonImage: {
+        width: '100%',
+        height: '100%',
     },
     buttonPressed: {
         opacity: 0.8,
         transform: [{ scale: 0.98 }],
-    },
-    buttonText: {
-        color: '#FAFAFA',
-        fontSize: 18,
-        fontWeight: '700',
-        textAlign: 'center',
     }
 });

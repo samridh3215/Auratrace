@@ -45,7 +45,14 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow AuraTrace to access your photos to save design visuals.",
+          "savePhotosPermission": "Allow AuraTrace to save design visuals to your library."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -101,6 +101,16 @@ const normalizeCoordsForSvg = (
     return svgPoints.join(" ");
 };
 
+const sampleFixed = (data: number[], count: number = 50) => {
+    if (!data || data.length === 0) return new Array(count).fill(0);
+    const result = [];
+    for (let i = 0; i < count; i++) {
+        const index = Math.floor((i / (count - 1 || 1)) * (data.length - 1));
+        result.push(data[index]);
+    }
+    return result;
+};
+
 export default function ActivityDetailScreen() {
     const { id, itemData } = useLocalSearchParams<{ id: string, itemData?: string }>();
     const router = useRouter();
@@ -379,7 +389,7 @@ export default function ActivityDetailScreen() {
                                     <LineChart
                                         data={{
                                             labels: [],
-                                            datasets: [{ data: streamsData.heartrate.data.filter((_: any, i: number) => i % Math.ceil(streamsData.heartrate.data.length / 50) === 0) }]
+                                            datasets: [{ data: sampleFixed(streamsData.heartrate.data, 50) }]
                                         }}
                                         width={windowWidth - 64}
                                         height={180}
@@ -398,13 +408,44 @@ export default function ActivityDetailScreen() {
                                 </View>
                             )}
 
+                            {streamsData.velocity_smooth && streamsData.velocity_smooth.data.length > 0 && (
+                                <View style={styles.chartWrapper}>
+                                    <Text style={styles.chartLabel}>Pace (min/km)</Text>
+                                    <LineChart
+                                        data={{
+                                            labels: [],
+                                            datasets: [{
+                                                data: sampleFixed(streamsData.velocity_smooth.data.map((v: number) => {
+                                                    if (v <= 0.1) return 15; // Cap at 15 for charts to avoid spikes
+                                                    const p = 16.66667 / v;
+                                                    return Math.min(p, 15);
+                                                }), 50)
+                                            }]
+                                        }}
+                                        width={windowWidth - 64}
+                                        height={180}
+                                        withDots={false}
+                                        withInnerLines={false}
+                                        chartConfig={{
+                                            backgroundColor: '#1C1C24',
+                                            backgroundGradientFrom: '#1C1C24',
+                                            backgroundGradientTo: '#1C1C24',
+                                            color: (opacity = 1) => `rgba(45, 96, 255, ${opacity})`,
+                                            strokeWidth: 2,
+                                        }}
+                                        bezier
+                                        style={styles.chartStyle}
+                                    />
+                                </View>
+                            )}
+
                             {streamsData.altitude && streamsData.altitude.data.length > 0 && (
                                 <View style={styles.chartWrapper}>
                                     <Text style={styles.chartLabel}>Elevation (m)</Text>
                                     <LineChart
                                         data={{
                                             labels: [],
-                                            datasets: [{ data: streamsData.altitude.data.filter((_: any, i: number) => i % Math.ceil(streamsData.altitude.data.length / 50) === 0) }]
+                                            datasets: [{ data: sampleFixed(streamsData.altitude.data, 50) }]
                                         }}
                                         width={windowWidth - 64}
                                         height={180}
