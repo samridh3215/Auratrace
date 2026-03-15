@@ -12,6 +12,9 @@ router.get('/callback', stravaController.callback);
 // List authenticated user's activities
 router.get('/activities', stravaController.getActivities);
 
+// Get specific activity stream
+router.get('/activities/:id/streams', stravaController.getActivityStreams);
+
 // Logout user
 router.get('/logout', stravaController.logout);
 

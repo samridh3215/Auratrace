@@ -126,16 +126,23 @@ export default function ActivityDetailScreen() {
 
             if (!token) throw new Error('No token found');
 
-            const res = await axios.get(`${API_URL}/strava/activities/${id}/streams`, {
+            const targetUrl = `${API_URL}/strava/activities/${id}/streams`;
+            console.log(`[STREAMS FETCH] Attempting GET to: ${targetUrl}`);
+
+            const res = await axios.get(targetUrl, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
+            console.log(`[STREAMS FETCH] Success! Got streams:`, Object.keys(res.data));
             if (res.data) {
                 setStreamsData(res.data);
                 setStreamsLoaded(true);
             }
         } catch (error: any) {
-            console.error('Failed to load streams \n', error.message);
+            console.error('[STREAMS FETCH ERROR] Failed to load streams \n', error.message);
+            if (error.response) {
+                console.error('[STREAMS FETCH ERROR DETAILS] Status:', error.response.status, '\nData:', error.response.data);
+            }
             // Whether it's a 404 or Strava just doesn't have the data, show fallback UI
             setStreamsError(true);
             setStreamsData(null);
