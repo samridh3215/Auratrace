@@ -80,6 +80,10 @@ const getActivities = async (req, res) => {
         res.json({ count: activities.length, activities });
     } catch (err) {
         console.error('Error fetching Strava activities:', err.message);
+        if (err.response && err.response.status === 401) {
+            // Token likely expired on Strava's end (they expire every 6 hours)
+            return res.status(401).json({ error: 'Strava access token expired' });
+        }
         res.status(500).json({ error: 'Failed to fetch activities from Strava' });
     }
 };
