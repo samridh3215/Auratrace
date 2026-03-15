@@ -29,6 +29,6 @@ A powerful, interactive studio to create social-media-ready visuals:
 - **Canvas Rendering**: High-quality exports using `react-native-view-shot` to capture your customized canvas for sharing on Instagram or Strava.
 
 ## 🛠️ Technical Stack
-- **Frontend**: React Native, Expo 54, Reanimated (60fps interactions), Gesture Handler.
+- **Auratrace (Frontend)**: React Native, Expo 54, Reanimated (60fps interactions), Gesture Handler.
 - **Backend**: Node.js/Express, JWT-based security, Strava API V3.
 - **Graphics**: SVG, Canvas (Web), ViewShot for high-res imaging.
