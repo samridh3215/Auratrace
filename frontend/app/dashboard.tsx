@@ -175,12 +175,6 @@ export default function DashboardScreen() {
                     </View>
                 </View>
 
-                {/* Pseudo Map Route Representation */}
-                <View style={styles.routeVisual}>
-                    <Route size={40} color="#2D60FF" strokeWidth={1.2} style={{ opacity: 0.5 }} />
-                    <Text style={styles.routeText}>GPS Route Encrypted</Text>
-                </View>
-
                 <View style={styles.metricsGrid}>
                     <View style={styles.metric}>
                         <Clock size={16} color="#8A8D9F" />
@@ -403,24 +397,6 @@ const styles = StyleSheet.create({
         color: '#2D60FF',
         fontWeight: '800',
         fontSize: 15,
-    },
-    routeVisual: {
-        height: 80,
-        backgroundColor: '#0D0E14',
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: '#1C1D26',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 20,
-    },
-    routeText: {
-        color: '#4A4C59',
-        fontSize: 14,
-        marginLeft: 10,
-        fontWeight: '600',
-        letterSpacing: 0.5,
     },
     metricsGrid: {
         flexDirection: 'row',

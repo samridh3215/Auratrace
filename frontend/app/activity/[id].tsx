@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, Dimensions, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Map as MapIcon, Info, Route, Flame, Heart, Zap, Play, Activity as ActivityIcon } from 'lucide-react-native';
 import Svg, { Polyline as SvgPolyline } from 'react-native-svg';
@@ -219,7 +219,11 @@ export default function ActivityDetailScreen() {
                 </View>
             )}
 
-            <View style={styles.detailsContainer}>
+            <ScrollView
+                style={styles.detailsContainer}
+                contentContainerStyle={{ paddingBottom: 40 }}
+                showsVerticalScrollIndicator={false}
+            >
                 <Text style={styles.sectionTitle}>Activity Metrics</Text>
                 <View style={styles.metricsGrid}>
                     <View style={styles.statBox}>
@@ -266,7 +270,7 @@ export default function ActivityDetailScreen() {
                         </View>
                     ) : null}
                 </View>
-            </View>
+            </ScrollView>
         </View>
     );
 }
