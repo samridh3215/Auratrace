@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, Dimensions, ScrollView, Animated, PanResponder } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, Dimensions, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Map as MapIcon, Info, Route, Flame, Heart, Zap, Play, Activity as ActivityIcon } from 'lucide-react-native';
 import Svg, { Polyline as SvgPolyline } from 'react-native-svg';
@@ -98,10 +98,12 @@ const normalizeCoordsForSvg = (
 export default function ActivityDetailScreen() {
     const { id, itemData } = useLocalSearchParams<{ id: string, itemData?: string }>();
     const router = useRouter();
-    const mapRef = React.useRef<any>(null);
+    const mapRef = useRef<any>(null);
     const [activity, setActivity] = useState<ActivityData | null>(null);
     const [routeCoords, setRouteCoords] = useState<{ latitude: number, longitude: number }[]>([]);
-    const [viewMode, setViewMode] = useState<'map' | 'trace'>('map');
+
+    // Default to the pure trace line (SVG) instead of map, per mockup.
+    const [viewMode, setViewMode] = useState<'map' | 'trace'>('trace');
 
     useEffect(() => {
         let sourceItem: ActivityData | null = null;
@@ -134,74 +136,25 @@ export default function ActivityDetailScreen() {
     const hasRoute = routeCoords.length > 0;
     const platform = Platform.OS;
     const windowWidth = Dimensions.get('window').width;
-    const windowHeight = Dimensions.get('window').height;
-    const mapHeight = windowHeight * 0.45;
-
-    // DRAWER LOGIC
-    const panY = useRef(new Animated.Value(0)).current;
-    const currentPanY = useRef(0);
-
-    useEffect(() => {
-        const id = panY.addListener((state) => {
-            currentPanY.current = state.value;
-        });
-        return () => panY.removeListener(id);
-    }, [panY]);
-
-    const maxDrawerTranslation = -(mapHeight - 60);
-
-    const panResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: (_, gestureState) => {
-                // Ignore horizontal swipes and minor touches
-                return Math.abs(gestureState.dy) > 10;
-            },
-            onPanResponderGrant: () => {
-                panY.extractOffset();
-            },
-            onPanResponderMove: (_, gestureState) => {
-                panY.setValue(gestureState.dy);
-            },
-            onPanResponderRelease: (_, gestureState) => {
-                panY.flattenOffset();
-
-                // If velocity dragging up strongly, or user passed halfway
-                if (gestureState.vy < -0.5 || currentPanY.current < (maxDrawerTranslation / 2)) {
-                    Animated.spring(panY, {
-                        toValue: maxDrawerTranslation,
-                        useNativeDriver: true,
-                        bounciness: 0,
-                    }).start();
-                } else {
-                    // Snap back down
-                    Animated.spring(panY, {
-                        toValue: 0,
-                        useNativeDriver: true,
-                        bounciness: 0,
-                    }).start();
-                }
-            }
-        })
-    ).current;
+    const mapHeight = Dimensions.get('window').height * 0.40;
 
     // Fit map to coordinates on load
     useEffect(() => {
-        if (hasRoute && mapRef.current && platform !== 'web') {
+        if (hasRoute && viewMode === 'map' && mapRef.current && platform !== 'web') {
             // Small delay to ensure map has mounted and sized
             setTimeout(() => {
                 mapRef.current?.fitToCoordinates(routeCoords, {
                     edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
                     animated: true,
                 });
-            }, 500);
+            }, 300);
         }
     }, [hasRoute, routeCoords, viewMode, platform]);
 
     if (!activity) {
         return (
             <View style={styles.container}>
-                <Text style={{ color: '#FFF' }}>Loading...</Text>
+                <Text style={{ color: '#FFF', alignSelf: 'center', marginTop: 100 }}>Loading...</Text>
             </View>
         );
     }
@@ -216,76 +169,69 @@ export default function ActivityDetailScreen() {
                 <View style={{ width: 44 }} />
             </View>
 
-            {hasRoute && platform !== 'web' ? (
-                <View style={[styles.mapContainer, { height: mapHeight }]}>
-                    {viewMode === 'map' ? (
-                        <RouteMap
-                            ref={mapRef}
-                            style={styles.map}
-                            initialRegion={{
-                                latitude: routeCoords[0].latitude,
-                                longitude: routeCoords[0].longitude,
-                                latitudeDelta: 0.05,
-                                longitudeDelta: 0.05,
-                            }}
-                            routeCoords={routeCoords}
-                        />
-                    ) : (
-                        <View style={[styles.traceContainer, { width: windowWidth, height: mapHeight }]}>
-                            <Svg width="100%" height="100%">
-                                <SvgPolyline
-                                    points={normalizeCoordsForSvg(routeCoords, windowWidth, mapHeight, 30)}
-                                    fill="none"
-                                    stroke="#FC4C02"
-                                    strokeWidth="4"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
+            <ScrollView
+                style={styles.scrollContainer}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+            >
+                {/* 1. Map/Trace Card */}
+                <View style={styles.card}>
+                    {hasRoute && platform !== 'web' ? (
+                        <View style={[styles.mapContainer, { height: mapHeight }]}>
+                            {viewMode === 'map' ? (
+                                <RouteMap
+                                    ref={mapRef}
+                                    style={styles.map}
+                                    initialRegion={{
+                                        latitude: routeCoords[0].latitude,
+                                        longitude: routeCoords[0].longitude,
+                                        latitudeDelta: 0.05,
+                                        longitudeDelta: 0.05,
+                                    }}
+                                    routeCoords={routeCoords}
                                 />
-                            </Svg>
+                            ) : (
+                                <View style={[styles.traceContainer, { width: '100%', height: mapHeight }]}>
+                                    <Svg width="100%" height="100%">
+                                        <SvgPolyline
+                                            points={normalizeCoordsForSvg(routeCoords, windowWidth - 48, mapHeight, 30)}
+                                            fill="none"
+                                            stroke="#FC4C02"
+                                            strokeWidth="4"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    </Svg>
+                                </View>
+                            )}
+
+                            {/* View Toggle Button */}
+                            <Pressable
+                                style={styles.toggleButton}
+                                onPress={() => setViewMode(prev => prev === 'map' ? 'trace' : 'map')}
+                            >
+                                {viewMode === 'map' ? (
+                                    <ActivityIcon color="#FFF" size={20} />
+                                ) : (
+                                    <MapIcon color="#FFF" size={20} />
+                                )}
+                            </Pressable>
+                        </View>
+                    ) : (
+                        <View style={[styles.mapContainer, styles.noMapContainer, { height: mapHeight }]}>
+                            <Route size={48} color="#4A4C59" />
+                            <Text style={styles.noMapText}>
+                                {platform === 'web'
+                                    ? "Map preview is not supported on web."
+                                    : "No GPS route available for this activity."}
+                            </Text>
                         </View>
                     )}
-
-                    {/* View Toggle Button */}
-                    <Pressable
-                        style={styles.toggleButton}
-                        onPress={() => setViewMode(prev => prev === 'map' ? 'trace' : 'map')}
-                    >
-                        {viewMode === 'map' ? (
-                            <ActivityIcon color="#FFF" size={20} />
-                        ) : (
-                            <MapIcon color="#FFF" size={20} />
-                        )}
-                    </Pressable>
-                </View>
-            ) : (
-                <View style={[styles.mapContainer, styles.noMapContainer, { height: mapHeight }]}>
-                    <Route size={48} color="#4A4C59" />
-                    <Text style={styles.noMapText}>
-                        {platform === 'web'
-                            ? "Map preview is not supported on web."
-                            : "No GPS route available for this activity."}
-                    </Text>
-                </View>
-            )}
-
-            {/* Animated Bottom Drawer */}
-            <Animated.View
-                style={[
-                    styles.drawerContainer,
-                    { transform: [{ translateY: panY }] }
-                ]}
-            >
-                {/* Drag Handle Area */}
-                <View style={styles.dragHandleArea} {...panResponder.panHandlers}>
-                    <View style={styles.dragHandle} />
                 </View>
 
-                <ScrollView
-                    style={styles.detailsContainer}
-                    contentContainerStyle={{ paddingBottom: 100 }}
-                    showsVerticalScrollIndicator={false}
-                >
-                    <Text style={styles.sectionTitle}>Activity Metrics</Text>
+                {/* 2. Stats Card */}
+                <View style={styles.card}>
+                    <Text style={styles.sectionTitle}>Stats</Text>
                     <View style={styles.metricsGrid}>
                         <View style={styles.statBox}>
                             <Route color="#8A8D9F" size={20} style={styles.statIcon} />
@@ -331,8 +277,25 @@ export default function ActivityDetailScreen() {
                             </View>
                         ) : null}
                     </View>
-                </ScrollView>
-            </Animated.View>
+                </View>
+
+                {/* 3. Charts Card */}
+                <View style={styles.card}>
+                    <Text style={styles.sectionTitle}>Charts</Text>
+                    <View style={styles.chartPlaceholder}>
+                        <Info color="#4A4C59" size={24} />
+                        <Text style={styles.chartText}>Charts coming soon</Text>
+                    </View>
+                </View>
+
+            </ScrollView>
+
+            {/* Footer floating button */}
+            <View style={styles.footer}>
+                <Pressable style={styles.createVisualsButton} onPress={() => { }}>
+                    <Text style={styles.createVisualsText}>Create Visuals</Text>
+                </Pressable>
+            </View>
         </View>
     );
 }
@@ -348,7 +311,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingTop: Platform.OS === 'web' ? 24 : 60,
         paddingHorizontal: 20,
-        paddingBottom: 20,
+        paddingBottom: 16,
         backgroundColor: '#0A0A0E',
         zIndex: 10,
     },
@@ -368,9 +331,28 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginHorizontal: 16,
     },
+    scrollContainer: {
+        flex: 1,
+    },
+    scrollContent: {
+        paddingHorizontal: 16,
+        paddingBottom: 120, // Leave space for sticky footer
+        paddingTop: 8,
+    },
+    card: {
+        backgroundColor: '#1C1C24',
+        borderRadius: 24,
+        padding: 16,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#2D3246',
+        overflow: 'hidden',
+    },
     mapContainer: {
         width: '100%',
         position: 'relative',
+        borderRadius: 16,
+        overflow: 'hidden',
         backgroundColor: '#0D0E14',
     },
     map: {
@@ -396,37 +378,10 @@ const styles = StyleSheet.create({
         borderColor: '#2D3246',
         zIndex: 10,
     },
-    drawerContainer: {
-        height: Dimensions.get('window').height,
-        backgroundColor: '#0A0A0E',
-        marginTop: -20,
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.8,
-        shadowRadius: 15,
-        elevation: 10,
-        zIndex: 5,
-    },
-    dragHandleArea: {
-        width: '100%',
-        height: 36,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    dragHandle: {
-        width: 48,
-        height: 5,
-        borderRadius: 3,
-        backgroundColor: '#FFF',
-    },
     noMapContainer: {
         backgroundColor: '#12131A',
         justifyContent: 'center',
         alignItems: 'center',
-        borderBottomWidth: 1,
-        borderBottomColor: '#1C1D26',
     },
     noMapText: {
         color: '#8A8D9F',
@@ -434,32 +389,29 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '500',
     },
-    detailsContainer: {
-        flex: 1,
-        paddingHorizontal: 24,
-    },
     sectionTitle: {
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: '700',
         color: '#FFF',
-        marginBottom: 24,
+        marginBottom: 16,
     },
     metricsGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 16,
+        justifyContent: 'space-between',
+        gap: 12,
     },
     statBox: {
-        width: '47%', // roughly half width minus gap
-        backgroundColor: '#1C1C24',
-        padding: 20,
-        borderRadius: 24,
+        width: '48%',
+        backgroundColor: '#12131A',
+        padding: 16,
+        borderRadius: 16,
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: '#2D3246',
+        borderColor: '#1C1D26',
     },
     statIcon: {
-        marginBottom: 12,
+        marginBottom: 8,
     },
     statLabel: {
         color: '#8A8D9F',
@@ -469,7 +421,46 @@ const styles = StyleSheet.create({
     },
     statValue: {
         color: '#FFF',
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: '800',
+    },
+    chartPlaceholder: {
+        height: 150,
+        backgroundColor: '#12131A',
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#1C1D26',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    chartText: {
+        color: '#4A4C59',
+        fontSize: 14,
+        fontWeight: '600',
+        marginTop: 8,
+    },
+    footer: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        paddingHorizontal: 20,
+        paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+        paddingTop: 16,
+        backgroundColor: 'rgba(10, 10, 14, 0.95)',
+        borderTopWidth: 1,
+        borderTopColor: '#1C1D26',
+    },
+    createVisualsButton: {
+        backgroundColor: '#FFF',
+        paddingVertical: 16,
+        borderRadius: 100,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    createVisualsText: {
+        color: '#000',
+        fontSize: 16,
+        fontWeight: '700',
     }
 });
