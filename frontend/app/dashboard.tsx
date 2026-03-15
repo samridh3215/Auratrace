@@ -197,9 +197,7 @@ export default function DashboardScreen() {
         <View style={styles.container}>
             {/* Top Header */}
             <View style={styles.header}>
-                <Pressable style={styles.headerIconBtn} onPress={() => router.back()}>
-                    <ChevronLeft color="#FFF" size={24} />
-                </Pressable>
+                <View style={styles.headerIconBtn} />
                 <Text style={styles.headerTitle}>Activity History</Text>
                 <Pressable style={styles.headerIconBtn} onPress={() => router.push('/settings')}>
                     <Settings color="#FFF" size={20} />
