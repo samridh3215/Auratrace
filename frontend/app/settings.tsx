@@ -3,8 +3,9 @@ import { View, Text, StyleSheet, Pressable, ActivityIndicator, Platform } from '
 import { ChevronLeft, LogOut } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
+import * as SecureStore from 'expo-secure-store';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = process.env.EXPO_PUBLIC_API_URL as string;
 
 export default function SettingsScreen() {
     const router = useRouter();
@@ -14,11 +15,17 @@ export default function SettingsScreen() {
         setLoggingOut(true);
         try {
             await axios.get(`${API_URL}/strava/logout`, { withCredentials: true });
-            router.replace('/');
         } catch (err) {
-            console.error('Logout failed:', err);
-            setLoggingOut(false);
-            // Optionally could still redirect or show error toast
+            console.error('Logout API call failed:', err);
+        } finally {
+            // Unconditionally clear the token and redirect,
+            // even if the Strava server or our Node API fails.
+            if (Platform.OS === 'web') {
+                localStorage.removeItem('user_token');
+            } else {
+                await SecureStore.deleteItemAsync('user_token');
+            }
+            router.replace('/');
         }
     };
 
