@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Activity as ActivityIcon, Bike, Footprints, Clock, Flame, Heart, ChevronLeft, Settings, Navigation, Route } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
+import { GlobalActivityCache } from './cache';
 
 // Types
 type ActivityData = {
@@ -152,9 +153,10 @@ export default function DashboardScreen() {
             <Pressable
                 style={({ pressed }) => [styles.card, pressed && { opacity: 0.8 }]}
                 onPress={() => {
+                    GlobalActivityCache[item.id] = item;
                     router.push({
                         pathname: `/activity/[id]`,
-                        params: { id: item.id, itemData: JSON.stringify(item) }
+                        params: { id: item.id }
                     });
                 }}
             >

@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Platform, Dimensions } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Map as MapIcon, Info, Route, Flame, Heart, Zap, Play, Activity as ActivityIcon } from 'lucide-react-native';
-import MapView, { Polyline } from 'react-native-maps';
 import Svg, { Polyline as SvgPolyline } from 'react-native-svg';
 import polylineLib from '@mapbox/polyline';
+import RouteMap from '../components/RouteMap';
+import { GlobalActivityCache } from '../cache';
 
 type ActivityData = {
     id: number;
@@ -95,33 +96,40 @@ const normalizeCoordsForSvg = (
 };
 
 export default function ActivityDetailScreen() {
-    const { id, itemData } = useLocalSearchParams<{ id: string, itemData: string }>();
+    const { id, itemData } = useLocalSearchParams<{ id: string, itemData?: string }>();
     const router = useRouter();
-    const mapRef = React.useRef<MapView>(null);
+    const mapRef = React.useRef<any>(null);
     const [activity, setActivity] = useState<ActivityData | null>(null);
     const [routeCoords, setRouteCoords] = useState<{ latitude: number, longitude: number }[]>([]);
     const [viewMode, setViewMode] = useState<'map' | 'trace'>('map');
 
     useEffect(() => {
-        if (itemData) {
-            try {
-                const parsed = JSON.parse(itemData) as ActivityData;
-                setActivity(parsed);
+        let sourceItem: ActivityData | null = null;
 
-                if (parsed.map?.summary_polyline) {
-                    // Decode points
-                    const points = polylineLib.decode(parsed.map.summary_polyline);
-                    const coords = points.map(point => ({
-                        latitude: point[0],
-                        longitude: point[1]
-                    }));
-                    setRouteCoords(coords);
-                }
+        if (id && GlobalActivityCache[id]) {
+            sourceItem = GlobalActivityCache[id] as ActivityData;
+        } else if (itemData) {
+            try {
+                sourceItem = JSON.parse(itemData) as ActivityData;
             } catch (e) {
-                console.error("Failed to parse activity data", e);
+                console.error("Failed to parse activity data from url params", e);
             }
         }
-    }, [itemData]);
+
+        if (sourceItem) {
+            setActivity(sourceItem);
+
+            if (sourceItem.map?.summary_polyline) {
+                // Decode points
+                const points = polylineLib.decode(sourceItem.map.summary_polyline);
+                const coords = points.map(point => ({
+                    latitude: point[0],
+                    longitude: point[1]
+                }));
+                setRouteCoords(coords);
+            }
+        }
+    }, [id, itemData]);
 
     const hasRoute = routeCoords.length > 0;
     const platform = Platform.OS;
@@ -162,26 +170,17 @@ export default function ActivityDetailScreen() {
             {hasRoute && platform !== 'web' ? (
                 <View style={[styles.mapContainer, { height: mapHeight }]}>
                     {viewMode === 'map' ? (
-                        <MapView
+                        <RouteMap
                             ref={mapRef}
                             style={styles.map}
-                            // Default region before fitToCoordinates kicks in
                             initialRegion={{
                                 latitude: routeCoords[0].latitude,
                                 longitude: routeCoords[0].longitude,
                                 latitudeDelta: 0.05,
                                 longitudeDelta: 0.05,
                             }}
-                            userInterfaceStyle="dark"
-                        >
-                            <Polyline
-                                coordinates={routeCoords}
-                                strokeColor="#FC4C02"
-                                strokeWidth={4}
-                                lineJoin="round"
-                                lineCap="round"
-                            />
-                        </MapView>
+                            routeCoords={routeCoords}
+                        />
                     ) : (
                         <View style={[styles.traceContainer, { width: windowWidth, height: mapHeight }]}>
                             <Svg width="100%" height="100%">
