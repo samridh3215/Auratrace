@@ -88,6 +88,41 @@ const getActivities = async (req, res) => {
     }
 };
 
+const getActivityStreams = async (req, res) => {
+    try {
+        let accessToken;
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.split(' ')[1];
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                accessToken = decoded.accessToken;
+            } catch (err) {
+                return res.status(401).json({ error: 'Invalid or expired token' });
+            }
+        } else if (req.session.stravaAuth) {
+            accessToken = req.session.stravaAuth.accessToken;
+        }
+
+        if (!accessToken) {
+            return res.status(401).json({ error: 'Unauthorized. Please login first' });
+        }
+
+        const { id } = req.params;
+        const streams = await stravaService.fetchActivityStreams(accessToken, id);
+        res.json(streams);
+    } catch (err) {
+        console.error(`Error fetching Strava streams for activity ${req.params.id}:`, err.message);
+        if (err.response && err.response.status === 401) {
+            return res.status(401).json({ error: 'Strava access token expired' });
+        }
+        if (err.response && err.response.status === 404) {
+            return res.status(404).json({ error: 'Strava streams not found for this activity' });
+        }
+        res.status(500).json({ error: 'Failed to fetch activity streams from Strava' });
+    }
+};
+
 const logout = (req, res) => {
     req.session.destroy((err) => {
         if (err) {
@@ -102,5 +137,6 @@ module.exports = {
     login,
     callback,
     getActivities,
+    getActivityStreams,
     logout
 };

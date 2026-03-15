@@ -6,6 +6,11 @@ import Svg, { Polyline as SvgPolyline } from 'react-native-svg';
 import polylineLib from '@mapbox/polyline';
 import RouteMap from '../components/RouteMap';
 import { GlobalActivityCache } from '../cache';
+import axios from 'axios';
+import * as SecureStore from 'expo-secure-store';
+import { LineChart } from 'react-native-chart-kit';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL as string;
 
 type ActivityData = {
     id: number;
@@ -20,6 +25,7 @@ type ActivityData = {
     average_speed?: number;
     kudos_count?: number;
     suffer_score?: number;
+    kilojoules?: number;
     map?: {
         id: string;
         summary_polyline: string;
@@ -102,8 +108,41 @@ export default function ActivityDetailScreen() {
     const [activity, setActivity] = useState<ActivityData | null>(null);
     const [routeCoords, setRouteCoords] = useState<{ latitude: number, longitude: number }[]>([]);
 
-    // Default to the pure trace line (SVG) instead of map, per mockup.
     const [viewMode, setViewMode] = useState<'map' | 'trace'>('trace');
+
+    // Charts logic
+    const [streamsLoaded, setStreamsLoaded] = useState(false);
+    const [chartsLoading, setChartsLoading] = useState(false);
+    const [streamsData, setStreamsData] = useState<any>(null);
+
+    const fetchStreams = async () => {
+        if (!id) return;
+        setChartsLoading(true);
+        try {
+            const token = Platform.OS === 'web'
+                ? localStorage.getItem('user_token')
+                : await SecureStore.getItemAsync('user_token');
+
+            if (!token) throw new Error('No token found');
+
+            const res = await axios.get(`${API_URL}/strava/activities/${id}/streams`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (res.data) {
+                setStreamsData(res.data);
+                setStreamsLoaded(true);
+            }
+        } catch (error: any) {
+            console.error('Failed to load streams', error);
+            if (error.response?.status === 404) {
+                // Strava returns 404 if streams are unavailable (e.g. manual entry)
+                setStreamsData(null);
+            }
+        } finally {
+            setChartsLoading(false);
+        }
+    };
 
     useEffect(() => {
         let sourceItem: ActivityData | null = null;
@@ -158,6 +197,8 @@ export default function ActivityDetailScreen() {
             </View>
         );
     }
+
+    const totalCal = activity.calories || activity.kilojoules || Math.round(activity.distance * 0.08);
 
     return (
         <View style={styles.container}>
@@ -265,7 +306,7 @@ export default function ActivityDetailScreen() {
 
                         <View style={styles.statBox}>
                             <Flame color="#FC4C02" size={20} style={styles.statIcon} />
-                            <Text style={styles.statValue}>{activity.calories || '--'}</Text>
+                            <Text style={styles.statValue}>{totalCal}</Text>
                             <Text style={styles.statLabel}>Calories</Text>
                         </View>
                     </View>
@@ -274,17 +315,83 @@ export default function ActivityDetailScreen() {
                 {/* 3. Charts Card */}
                 <View style={styles.card}>
                     <Text style={styles.sectionTitle}>Charts</Text>
-                    <View style={styles.chartPlaceholder}>
-                        <Info color="#4A4C59" size={24} />
-                        <Text style={styles.chartText}>Charts coming soon</Text>
-                    </View>
+
+                    {!streamsLoaded && !chartsLoading && (
+                        <Pressable style={styles.loadChartsButton} onPress={fetchStreams}>
+                            <Zap color="#FFF" size={20} />
+                            <Text style={styles.loadChartsText}>Load Advanced Metrics</Text>
+                        </Pressable>
+                    )}
+
+                    {chartsLoading && (
+                        <View style={styles.chartPlaceholder}>
+                            <Text style={styles.chartText}>Loading stream data...</Text>
+                        </View>
+                    )}
+
+                    {streamsLoaded && streamsData && (
+                        <View>
+                            {streamsData.heartrate && streamsData.heartrate.data.length > 0 && (
+                                <View style={styles.chartWrapper}>
+                                    <Text style={styles.chartLabel}>Heart Rate (bpm)</Text>
+                                    <LineChart
+                                        data={{
+                                            labels: [],
+                                            datasets: [{ data: streamsData.heartrate.data.filter((_: any, i: number) => i % Math.ceil(streamsData.heartrate.data.length / 50) === 0) }]
+                                        }}
+                                        width={windowWidth - 64}
+                                        height={180}
+                                        withDots={false}
+                                        withInnerLines={false}
+                                        chartConfig={{
+                                            backgroundColor: '#1C1C24',
+                                            backgroundGradientFrom: '#1C1C24',
+                                            backgroundGradientTo: '#1C1C24',
+                                            color: (opacity = 1) => `rgba(242, 33, 90, ${opacity})`,
+                                            strokeWidth: 2,
+                                        }}
+                                        bezier
+                                        style={styles.chartStyle}
+                                    />
+                                </View>
+                            )}
+
+                            {streamsData.altitude && streamsData.altitude.data.length > 0 && (
+                                <View style={styles.chartWrapper}>
+                                    <Text style={styles.chartLabel}>Elevation (m)</Text>
+                                    <LineChart
+                                        data={{
+                                            labels: [],
+                                            datasets: [{ data: streamsData.altitude.data.filter((_: any, i: number) => i % Math.ceil(streamsData.altitude.data.length / 50) === 0) }]
+                                        }}
+                                        width={windowWidth - 64}
+                                        height={180}
+                                        withDots={false}
+                                        withInnerLines={false}
+                                        chartConfig={{
+                                            backgroundColor: '#1C1C24',
+                                            backgroundGradientFrom: '#1C1C24',
+                                            backgroundGradientTo: '#1C1C24',
+                                            color: (opacity = 1) => `rgba(138, 141, 159, ${opacity})`,
+                                            strokeWidth: 2,
+                                        }}
+                                        bezier
+                                        style={styles.chartStyle}
+                                    />
+                                </View>
+                            )}
+                        </View>
+                    )}
                 </View>
 
             </ScrollView>
 
             {/* Footer floating button */}
             <View style={styles.footer}>
-                <Pressable style={styles.createVisualsButton} onPress={() => { }}>
+                <Pressable
+                    style={styles.createVisualsButton}
+                    onPress={() => router.push({ pathname: '/activity/visuals', params: { id: activity.id } })}
+                >
                     <Text style={styles.createVisualsText}>Create Visuals</Text>
                 </Pressable>
             </View>
@@ -413,7 +520,7 @@ const styles = StyleSheet.create({
         fontWeight: '800',
     },
     chartPlaceholder: {
-        height: 150,
+        height: 100,
         backgroundColor: '#12131A',
         borderRadius: 16,
         borderWidth: 1,
@@ -425,7 +532,36 @@ const styles = StyleSheet.create({
         color: '#4A4C59',
         fontSize: 14,
         fontWeight: '600',
-        marginTop: 8,
+    },
+    loadChartsButton: {
+        backgroundColor: '#12131A',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#2D60FF',
+        gap: 8,
+    },
+    loadChartsText: {
+        color: '#FFF',
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    chartWrapper: {
+        marginTop: 16,
+    },
+    chartLabel: {
+        color: '#8A8D9F',
+        fontSize: 13,
+        fontWeight: '600',
+        marginBottom: 8,
+        marginLeft: 4,
+    },
+    chartStyle: {
+        borderRadius: 16,
+        marginLeft: -10, // Adjust layout for react-native-chart-kit default padding
     },
     footer: {
         position: 'absolute',
