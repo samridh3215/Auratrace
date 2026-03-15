@@ -152,6 +152,31 @@ export default function ActivityDetailScreen() {
     };
 
     useEffect(() => {
+        const fetchDetailedActivity = async () => {
+            if (!id) return;
+            try {
+                const token = Platform.OS === 'web'
+                    ? localStorage.getItem('user_token')
+                    : await SecureStore.getItemAsync('user_token');
+
+                if (!token) return;
+
+                const res = await axios.get(`${API_URL}/strava/activities/${id}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+
+                if (res.data) {
+                    setActivity((prev: any) => ({ ...prev, ...res.data }));
+                }
+            } catch (error) {
+                console.error('Failed to fetch detailed activity', error);
+            }
+        };
+
+        fetchDetailedActivity();
+    }, [id]);
+
+    useEffect(() => {
         let sourceItem: ActivityData | null = null;
 
         if (id && GlobalActivityCache[id]) {

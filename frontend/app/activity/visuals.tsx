@@ -1,37 +1,101 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, Dimensions, ScrollView, Image, Animated, PanResponder } from 'react-native';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, Pressable, Platform, Dimensions, ScrollView, Image, Animated, PanResponder, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Image as ImageIcon, Share as ShareIcon, Type, Map as MapIcon, Maximize, CheckSquare, Square } from 'lucide-react-native';
+import { ChevronLeft, Image as ImageIcon, Share as ShareIcon, Trash2, Layers, Droplets, Grid, Filter, Plus, ChevronRight, Eye, Info } from 'lucide-react-native';
 import Svg, { Polyline as SvgPolyline } from 'react-native-svg';
 import polylineLib from '@mapbox/polyline';
 import * as ImagePicker from 'expo-image-picker';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
-import { GlobalActivityCache } from '../cache';
+import axios from 'axios';
+import * as SecureStore from 'expo-secure-store';
+import { LineChart } from 'react-native-chart-kit';
 
-// Shared SVG helpers
-const getBoundingBox = (coords: { latitude: number, longitude: number }[]) => {
-    let minLat = Infinity, maxLat = -Infinity;
-    let minLng = Infinity, maxLng = -Infinity;
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+
+// --- HSL Helpers ---
+const hslaToHex = (h: number, s: number, l: number, a: number = 1) => {
+    l /= 100;
+    const aFactor = s * Math.min(l, 1 - l) / 100;
+    const f = (n: number) => {
+        const k = (n + h / 30) % 12;
+        const color = l - aFactor * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+        return Math.round(255 * color).toString(16).padStart(2, '0');
+    };
+    const alpha = Math.round(a * 255).toString(16).padStart(2, '0');
+    return `#${f(0)}${f(8)}${f(4)}${alpha}`;
+};
+
+const hexToHsla = (hex: string) => {
+    if (!hex || hex === 'transparent') return { h: 0, s: 0, l: 100, a: 0 };
+    let r = 0, g = 0, b = 0, a = 1;
+    if (hex.length === 7) {
+        r = parseInt(hex.slice(1, 3), 16);
+        g = parseInt(hex.slice(3, 5), 16);
+        b = parseInt(hex.slice(5, 7), 16);
+    } else if (hex.length === 9) {
+        r = parseInt(hex.slice(1, 3), 16);
+        g = parseInt(hex.slice(3, 5), 16);
+        b = parseInt(hex.slice(5, 7), 16);
+        a = parseInt(hex.slice(7, 9), 16) / 255;
+    }
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0, l = (max + min) / 2;
+    if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+            case g: h = (b - r) / d + 2; break;
+            case b: h = (r - g) / d + 4; break;
+        }
+        h /= 6;
+    }
+    return { h: h * 360, s: s * 100, l: l * 100, a };
+};
+
+// --- Types ---
+type ElementType = 'title' | 'map' | 'stat' | 'graph';
+
+const RATIOS = ['1:1', '4:5', '9:16', '16:9'];
+
+interface CanvasElement {
+    id: string;
+    type: ElementType;
+    x: number;
+    y: number;
+    scale: number;
+    color: string;
+    visible: boolean;
+    label?: string;
+    value?: string | number;
+    metrics?: { name: string, color: string }[]; // for merged graphs
+    opacity?: number;
+}
+
+// --- Helpers ---
+const formatDistance = (meters: number) => (meters / 1000).toFixed(2);
+const formatDuration = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
+const normalizeCoordsForSvg = (coords: { latitude: number, longitude: number }[], width: number, height: number, padding: number) => {
+    if (coords.length === 0) return "";
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
     coords.forEach(coord => {
         if (coord.latitude < minLat) minLat = coord.latitude;
         if (coord.latitude > maxLat) maxLat = coord.latitude;
         if (coord.longitude < minLng) minLng = coord.longitude;
         if (coord.longitude > maxLng) maxLng = coord.longitude;
     });
-    return { minLat, maxLat, minLng, maxLng };
-};
-
-const normalizeCoordsForSvg = (coords: { latitude: number, longitude: number }[], width = 300, height = 300, padding = 40) => {
-    if (coords.length === 0) return "";
-    const { minLat, maxLat, minLng, maxLng } = getBoundingBox(coords);
     const latDiff = maxLat - minLat;
     const lngDiff = maxLng - minLng;
     const usableWidth = width - (padding * 2);
     const usableHeight = height - (padding * 2);
-    const scaleX = lngDiff === 0 ? 1 : usableWidth / lngDiff;
-    const scaleY = latDiff === 0 ? 1 : usableHeight / latDiff;
-    const scale = Math.min(scaleX, scaleY);
+    const scale = Math.min(usableWidth / (lngDiff || 1), usableHeight / (latDiff || 1));
     const offsetX = (width - (lngDiff * scale)) / 2;
     const offsetY = (height - (latDiff * scale)) / 2;
     return coords.map(coord => {
@@ -42,57 +106,47 @@ const normalizeCoordsForSvg = (coords: { latitude: number, longitude: number }[]
     }).join(" ");
 };
 
-const formatDistance = (meters: number) => (meters / 1000).toFixed(2);
-const formatDuration = (seconds: number) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
-};
-const formatPace = (speedMs: number) => {
-    if (!speedMs) return '0:00';
-    const sPerKm = 1000 / speedMs;
-    const m = Math.floor(sPerKm / 60);
-    const s = Math.floor(sPerKm % 60);
-    return `${m}:${s.toString().padStart(2, '0')}`;
-};
+const DraggableWrapper = ({ element, selected, onSelect, onMove, children }: any) => {
+    const pan = useRef(new Animated.ValueXY({ x: element.x, y: element.y })).current;
 
-const COLORS = ['#FFFFFF', '#000000', '#FC4C02', '#2D60FF', '#4ADE80', '#F2215A', '#FDE047'];
-const FONTS = Platform.OS === 'ios' ? ['System', 'Georgia', 'Courier', 'Trebuchet MS'] : ['sans-serif', 'serif', 'monospace', 'sans-serif-condensed'];
-const RATIOS = ['1:1', '4:5', '9:16', '16:9'];
-
-const getAspectDimensions = (ratio: string, maxWidth: number) => {
-    switch (ratio) {
-        case '4:5': return { width: maxWidth * 0.8, height: maxWidth };
-        case '9:16': return { width: maxWidth * (9 / 16), height: maxWidth };
-        case '16:9': return { width: maxWidth, height: maxWidth * (9 / 16) };
-        case '1:1':
-        default: return { width: maxWidth, height: maxWidth };
-    }
-};
-
-const Draggable = ({ children, initialX = 0, initialY = 0 }: any) => {
-    const pan = useRef(new Animated.ValueXY({ x: initialX, y: initialY })).current;
+    useEffect(() => {
+        pan.setValue({ x: element.x, y: element.y });
+    }, [element.x, element.y]);
 
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => true,
             onPanResponderGrant: () => {
+                onSelect(element.id);
                 pan.setOffset({ x: (pan.x as any)._value, y: (pan.y as any)._value });
                 pan.setValue({ x: 0, y: 0 });
             },
-            onPanResponderMove: Animated.event(
-                [null, { dx: pan.x, dy: pan.y }],
-                { useNativeDriver: false }
-            ),
+            onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], { useNativeDriver: false }),
             onPanResponderRelease: () => {
                 pan.flattenOffset();
+                onMove(element.id, (pan.x as any)._value, (pan.y as any)._value);
             }
         })
     ).current;
 
     return (
-        <Animated.View style={{ transform: [{ translateX: pan.x }, { translateY: pan.y }], position: 'absolute' }} {...panResponder.panHandlers}>
-            {children}
+        <Animated.View
+            style={[
+                styles.draggable,
+                {
+                    transform: [
+                        { translateX: pan.x },
+                        { translateY: pan.y },
+                        { scale: element.scale }
+                    ],
+                    zIndex: selected ? 100 : 1
+                }
+            ]}
+            {...panResponder.panHandlers}
+        >
+            <View style={[selected && styles.selectedBorder]}>
+                {children}
+            </View>
         </Animated.View>
     );
 };
@@ -102,492 +156,318 @@ export default function VisualsScreen() {
     const router = useRouter();
     const [activity, setActivity] = useState<any>(null);
     const [routeCoords, setRouteCoords] = useState<any[]>([]);
+    const [streamsData, setStreamsData] = useState<any>(null);
 
-    // Editor State
+    // Canvas State
     const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
-    const [textColor, setTextColor] = useState(COLORS[0]);
-    const [mapColor, setMapColor] = useState(COLORS[2]);
-    const [fontFamily, setFontFamily] = useState(FONTS[0]);
-    const [activeTab, setActiveTab] = useState<'layout' | 'metrics' | 'image' | 'style'>('layout');
+    const [transparentMode, setTransparentMode] = useState(false);
     const [aspectRatio, setAspectRatio] = useState('1:1');
-    const [metrics, setMetrics] = useState({
-        title: true,
-        map: true,
-        distance: true,
-        time: true,
-        elevation: true,
-        pace: false,
-        heartrate: false,
-        calories: false
-    });
+    const [elements, setElements] = useState<CanvasElement[]>([]);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [canvasScale, setCanvasScale] = useState(1);
+
+    // Editor UI State
+    const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState<'layout' | 'elements' | 'style' | 'graph'>('layout');
 
     const viewShotRef = useRef<any>(null);
+    const screenWidth = Dimensions.get('window').width;
 
+    // Initial Load
     useEffect(() => {
-        if (id && GlobalActivityCache[id]) {
-            const sourceItem = GlobalActivityCache[id];
-            setActivity(sourceItem);
-            if (sourceItem.map?.summary_polyline) {
-                const points = polylineLib.decode(sourceItem.map.summary_polyline);
-                setRouteCoords(points.map(p => ({ latitude: p[0], longitude: p[1] })));
-            }
-        }
+        const loadInitialData = async () => {
+            if (!id) return;
+            try {
+                const token = Platform.OS === 'web'
+                    ? localStorage.getItem('user_token')
+                    : await SecureStore.getItemAsync('user_token');
+                if (!token) return;
+
+                const actRes = await axios.get(`${API_URL}/strava/activities/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+                const act = actRes.data;
+                setActivity(act);
+
+                if (act.map?.summary_polyline) {
+                    const points = polylineLib.decode(act.map.summary_polyline);
+                    setRouteCoords(points.map(p => ({ latitude: p[0], longitude: p[1] })));
+                }
+
+                const streamRes = await axios.get(`${API_URL}/strava/activities/${id}/streams`, { headers: { Authorization: `Bearer ${token}` } });
+                setStreamsData(streamRes.data);
+
+                setElements([
+                    { id: 'title', type: 'title', x: 20, y: 20, scale: 1, color: '#FFFFFF', visible: true },
+                    { id: 'map', type: 'map', x: 40, y: 60, scale: 1, color: '#FC4C02', visible: true },
+                    { id: 'dist', type: 'stat', x: 20, y: 280, scale: 1, color: '#FFFFFF', visible: true, label: 'Distance', value: `${formatDistance(act.distance)} km` },
+                    { id: 'time', type: 'stat', x: 130, y: 280, scale: 1, color: '#FFFFFF', visible: true, label: 'Time', value: formatDuration(act.moving_time) },
+                    { id: 'cal', type: 'stat', x: 230, y: 280, scale: 1, color: '#FFFFFF', visible: true, label: 'Calories', value: act.calories || 0 }
+                ]);
+            } catch (err) { console.error(err); } finally { setLoading(false); }
+        };
+        loadInitialData();
     }, [id]);
 
+    const canvasWidth = useMemo(() => {
+        const maxWidth = screenWidth - 40;
+        if (aspectRatio === '4:5') return maxWidth * 0.8;
+        if (aspectRatio === '9:16') return maxWidth * 0.5625;
+        return maxWidth;
+    }, [aspectRatio, screenWidth]);
+
+    const canvasHeight = useMemo(() => {
+        const maxWidth = screenWidth - 40;
+        if (aspectRatio === '16:9') return maxWidth * 0.5625;
+        return maxWidth;
+    }, [aspectRatio, screenWidth]);
+
+    const handleMove = (id: string, x: number, y: number) => setElements(prev => prev.map(el => el.id === id ? { ...el, x, y } : el));
+    const updateElement = (id: string | null, updates: Partial<CanvasElement>) => id && setElements(prev => prev.map(el => el.id === id ? { ...el, ...updates } : el));
+    const toggleElement = (id: string) => setElements(prev => prev.map(el => el.id === id ? { ...el, visible: !el.visible } : el));
+
     const pickImage = async () => {
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'],
-            allowsEditing: true,
-            quality: 1,
-        });
-        if (!result.canceled) {
-            setBackgroundImage(result.assets[0].uri);
-        }
+        const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: 1 });
+        if (!result.canceled) { setBackgroundImage(result.assets[0].uri); setTransparentMode(false); }
     };
 
     const shareVisual = async () => {
         if (!viewShotRef.current) return;
         try {
             const uri = await viewShotRef.current.capture();
-            if (await Sharing.isAvailableAsync()) {
-                await Sharing.shareAsync(uri);
-            } else {
-                alert("Sharing is not available on this platform");
-            }
-        } catch (err) {
-            console.error(err);
-        }
+            if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri);
+        } catch (err) { console.error(err); }
     };
 
-    const toggleMetric = (key: keyof typeof metrics) => {
-        setMetrics(prev => ({ ...prev, [key]: !prev[key] }));
-    };
+    if (loading || !activity) {
+        return <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#2D60FF" /></View>;
+    }
 
-    if (!activity) return <View style={styles.container}><Text style={{ color: '#FFF' }}>Loading...</Text></View>;
-
-    const screenWidth = Dimensions.get('window').width;
-    const canvasMaxWidth = screenWidth - 40;
-    const { width: canvasWidth, height: canvasHeight } = getAspectDimensions(aspectRatio, canvasMaxWidth);
-    const hasRoute = routeCoords.length > 0;
-    const totalCal = activity.calories || activity.kilojoules || Math.round(activity.distance * 0.08);
-
-    const StatBlock = ({ label, value }: { label: string, value: string | number }) => (
-        <View style={styles.statBlock}>
-            <Text style={[styles.overlayStatVal, { color: textColor, fontFamily }]}>{value}</Text>
-            <Text style={[styles.overlayStatLabel, { color: textColor, opacity: 0.8, fontFamily }]}>{label}</Text>
-        </View>
-    );
+    const selectedElement = elements.find(el => el.id === selectedId);
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Pressable style={styles.headerIconBtn} onPress={() => router.back()}>
-                    <ChevronLeft color="#FFF" size={24} />
-                </Pressable>
-                <Text style={styles.headerTitle}>Create Visual</Text>
-                <Pressable style={styles.headerIconBtn} onPress={shareVisual}>
-                    <ShareIcon color="#FFF" size={20} />
-                </Pressable>
+                <Pressable onPress={() => router.back()} style={styles.iconBtn}><ChevronLeft color="#FFF" size={24} /></Pressable>
+                <Text style={styles.headerTitle}>Design Canvas</Text>
+                <Pressable onPress={shareVisual} style={[styles.iconBtn, { backgroundColor: '#2D60FF' }]}><ShareIcon color="#FFF" size={20} /></Pressable>
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-
-                {/* Visual Canvas Viewer */}
+            <ScrollView contentContainerStyle={{ paddingBottom: 150 }} showsVerticalScrollIndicator={false}>
                 <View style={styles.canvasWrapper}>
                     <ViewShot ref={viewShotRef} options={{ format: 'png', quality: 1 }}>
-                        <View style={[styles.canvas, { width: canvasWidth, height: canvasHeight }]}>
-                            {backgroundImage ? (
-                                <Image source={{ uri: backgroundImage }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                            ) : (
-                                <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1C1C24' }]} />
-                            )}
+                        <View style={[styles.canvas, { width: canvasWidth, height: canvasHeight, backgroundColor: transparentMode ? 'transparent' : '#12131A' }]}>
+                            {backgroundImage && !transparentMode && <Image source={{ uri: backgroundImage }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
+                            {!transparentMode && <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.2)' }]} />}
 
-                            {/* Overlay Gradient for readability */}
-                            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.2)' }]} pointerEvents="none" />
-
-                            {/* Map Trace (Draggable) */}
-                            {hasRoute && metrics.map && (
-                                <Draggable initialX={canvasWidth * 0.1} initialY={canvasHeight * 0.1}>
-                                    <View style={{ width: canvasWidth * 0.8, height: canvasHeight * 0.6 }}>
-                                        <Svg width="100%" height="100%">
-                                            <SvgPolyline
-                                                points={normalizeCoordsForSvg(routeCoords, canvasWidth * 0.8, canvasHeight * 0.6, 20)}
-                                                fill="none"
-                                                stroke={mapColor}
-                                                strokeWidth="6"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
+                            {elements.map(el => (el.visible && (
+                                <DraggableWrapper key={el.id} element={el} selected={selectedId === el.id} onSelect={setSelectedId} onMove={handleMove}>
+                                    {el.type === 'title' && <Text style={[styles.titleText, { color: el.color }]}>{activity.name}</Text>}
+                                    {el.type === 'map' && routeCoords.length > 0 && (
+                                        <View style={{ width: 250, height: 250 }}>
+                                            <Svg width="100%" height="100%">
+                                                <SvgPolyline points={normalizeCoordsForSvg(routeCoords, 250, 250, 20)} fill="none" stroke={el.color} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+                                            </Svg>
+                                        </View>
+                                    )}
+                                    {el.type === 'stat' && (
+                                        <View style={{ alignItems: 'center' }}>
+                                            <Text style={[styles.statVal, { color: el.color }]}>{el.value}</Text>
+                                            <Text style={[styles.statLabel, { color: el.color, opacity: 0.7 }]}>{el.label}</Text>
+                                        </View>
+                                    )}
+                                    {el.type === 'graph' && streamsData && (
+                                        <View style={{ width: 250, height: 120, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 15, padding: 10 }}>
+                                            <LineChart
+                                                data={{
+                                                    labels: [],
+                                                    datasets: (el.metrics || []).map(m => ({
+                                                        data: streamsData[m.name]?.data?.filter((_: any, i: number) => i % 40 === 0) || [0, 0, 0],
+                                                        color: () => m.color
+                                                    }))
+                                                }}
+                                                width={230} height={100} withDots={false} withInnerLines={false} withVerticalLines={false} withHorizontalLines={false} withVerticalLabels={false} withHorizontalLabels={false}
+                                                chartConfig={{ backgroundColor: 'transparent', backgroundGradientFrom: 'transparent', backgroundGradientTo: 'transparent', decimalPlaces: 0, color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})` }}
+                                                bezier
                                             />
-                                        </Svg>
-                                    </View>
-                                </Draggable>
-                            )}
-
-                            {/* Title (Draggable) */}
-                            {metrics.title && (
-                                <Draggable initialX={20} initialY={20}>
-                                    <Text style={[styles.overlayTitle, { color: textColor, fontFamily }]}>{activity.name}</Text>
-                                </Draggable>
-                            )}
-
-                            {/* Independent Draggable Stats */}
-                            {metrics.distance && (
-                                <Draggable initialX={20} initialY={canvasHeight - 80}>
-                                    <StatBlock label="Distance" value={`${formatDistance(activity.distance)} km`} />
-                                </Draggable>
-                            )}
-
-                            {metrics.time && (
-                                <Draggable initialX={canvasWidth / 2 - 40} initialY={canvasHeight - 80}>
-                                    <StatBlock label="Time" value={formatDuration(activity.moving_time)} />
-                                </Draggable>
-                            )}
-
-                            {metrics.elevation && (
-                                <Draggable initialX={canvasWidth - 100} initialY={canvasHeight - 80}>
-                                    <StatBlock label="Elevation" value={`${activity.total_elevation_gain || 0}m`} />
-                                </Draggable>
-                            )}
-
-                            {metrics.pace && (
-                                <Draggable initialX={20} initialY={canvasHeight - 140}>
-                                    <StatBlock label="Pace" value={`${formatPace(activity.average_speed)}/km`} />
-                                </Draggable>
-                            )}
-
-                            {metrics.heartrate && (
-                                <Draggable initialX={canvasWidth / 2 - 40} initialY={canvasHeight - 140}>
-                                    <StatBlock label="Heart Rate" value={`${Math.round(activity.average_heartrate || 0)} bpm`} />
-                                </Draggable>
-                            )}
-
-                            {metrics.calories && (
-                                <Draggable initialX={canvasWidth - 100} initialY={canvasHeight - 140}>
-                                    <StatBlock label="Calories" value={totalCal} />
-                                </Draggable>
-                            )}
-
+                                        </View>
+                                    )}
+                                </DraggableWrapper>
+                            )))}
                         </View>
                     </ViewShot>
                 </View>
 
-                <Text style={styles.hintText}>Tip: Drag any metric or trace to reposition it!</Text>
+                <View style={styles.editor}>
+                    <View style={styles.tabRow}>
+                        {['layout', 'elements', 'style', 'graph'].map((t: any) => (
+                            <Pressable key={t} onPress={() => setActiveTab(t)} style={[styles.tab, activeTab === t && styles.activeTab]}>
+                                {t === 'layout' && <Grid size={18} color={activeTab === t ? '#FFF' : '#8A8D9F'} />}
+                                {t === 'elements' && <Layers size={18} color={activeTab === t ? '#FFF' : '#8A8D9F'} />}
+                                {t === 'style' && <Droplets size={18} color={activeTab === t ? '#FFF' : '#8A8D9F'} />}
+                                {t === 'graph' && <Filter size={18} color={activeTab === t ? '#FFF' : '#8A8D9F'} />}
+                            </Pressable>
+                        ))}
+                    </View>
 
-                {/* Editor Controls */}
-                <View style={styles.editorControls}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsRow}>
-                        <Pressable style={[styles.tabBtn, activeTab === 'layout' && styles.tabBtnActive]} onPress={() => setActiveTab('layout')}>
-                            <Maximize size={16} color={activeTab === 'layout' ? '#FFF' : '#8A8D9F'} />
-                            <Text style={[styles.tabText, activeTab === 'layout' && styles.tabTextActive]}>Layout</Text>
-                        </Pressable>
-                        <Pressable style={[styles.tabBtn, activeTab === 'metrics' && styles.tabBtnActive]} onPress={() => setActiveTab('metrics')}>
-                            <CheckSquare size={16} color={activeTab === 'metrics' ? '#FFF' : '#8A8D9F'} />
-                            <Text style={[styles.tabText, activeTab === 'metrics' && styles.tabTextActive]}>Metrics</Text>
-                        </Pressable>
-                        <Pressable style={[styles.tabBtn, activeTab === 'image' && styles.tabBtnActive]} onPress={() => setActiveTab('image')}>
-                            <ImageIcon size={16} color={activeTab === 'image' ? '#FFF' : '#8A8D9F'} />
-                            <Text style={[styles.tabText, activeTab === 'image' && styles.tabTextActive]}>Photo</Text>
-                        </Pressable>
-                        <Pressable style={[styles.tabBtn, activeTab === 'style' && styles.tabBtnActive]} onPress={() => setActiveTab('style')}>
-                            <MapIcon size={16} color={activeTab === 'style' ? '#FFF' : '#8A8D9F'} />
-                            <Text style={[styles.tabText, activeTab === 'style' && styles.tabTextActive]}>Style</Text>
-                        </Pressable>
-                    </ScrollView>
-
-                    <View style={styles.tabContentPanel}>
+                    <View style={styles.panel}>
                         {activeTab === 'layout' && (
                             <View>
-                                <Text style={styles.controlSectionLabel}>Canvas Aspect Ratio</Text>
-                                <View style={styles.ratiosGrid}>
+                                <Text style={styles.panelTitle}>Canvas Layout</Text>
+                                <View style={styles.grid}>
                                     {RATIOS.map(r => (
-                                        <Pressable key={r} onPress={() => setAspectRatio(r)} style={[styles.ratioBtn, aspectRatio === r && styles.ratioBtnActive]}>
-                                            <Text style={[styles.ratioBtnText, aspectRatio === r && { color: '#FFF' }]}>{r}</Text>
+                                        <Pressable key={r} onPress={() => setAspectRatio(r)} style={[styles.gridBtn, aspectRatio === r && styles.activeGridBtn]}>
+                                            <Text style={[styles.gridBtnText, aspectRatio === r && { color: '#FFF' }]}>{r}</Text>
                                         </Pressable>
                                     ))}
+                                </View>
+                                <View style={styles.actionRow}>
+                                    <Pressable onPress={pickImage} style={styles.fullBtn}><ImageIcon size={18} color="#FFF" /><Text style={styles.btnText}>Change Photo</Text></Pressable>
+                                    <Pressable onPress={() => setTransparentMode(!transparentMode)} style={[styles.fullBtn, transparentMode && { backgroundColor: '#FC4C02' }]}><Text style={styles.btnText}>Transparent</Text></Pressable>
                                 </View>
                             </View>
                         )}
 
-                        {activeTab === 'metrics' && (
+                        {activeTab === 'elements' && (
                             <View>
-                                <Text style={styles.controlSectionLabel}>Select Overlay Metrics</Text>
-                                <View style={styles.metricsGrid}>
-                                    {Object.entries(metrics).map(([key, isActive]) => (
-                                        <Pressable key={key} onPress={() => toggleMetric(key as any)} style={[styles.metricToggleBtn, isActive && styles.metricToggleBtnActive]}>
-                                            {isActive ? <CheckSquare size={16} color="#2D60FF" /> : <Square size={16} color="#8A8D9F" />}
-                                            <Text style={[styles.metricToggleText, isActive && { color: '#FFF' }]}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
+                                <Text style={styles.panelTitle}>Canvas Elements</Text>
+                                <View style={styles.elementsList}>
+                                    {elements.map(el => (
+                                        <Pressable key={el.id} onPress={() => toggleElement(el.id)} style={[styles.elementItem, el.visible && styles.activeElementItem]}>
+                                            <Text style={[styles.elementItemText, el.visible && { color: '#FFF' }]}>{el.id.toUpperCase()}</Text>
+                                            {el.visible ? <Eye size={16} color="#2D60FF" /> : <Info size={16} color="#8A8D9F" />}
                                         </Pressable>
                                     ))}
+                                    <Pressable style={styles.addBtn} onPress={() => {
+                                        const newId = `graph-${Date.now()}`;
+                                        setElements([...elements, { id: newId, type: 'graph', x: 50, y: 150, scale: 1, color: '#4ADE80', visible: true, metrics: [{ name: 'heartrate', color: '#F2215A' }] }]);
+                                    }}><Plus size={18} color="#FFF" /><Text style={styles.btnText}>Add Graph Overlay</Text></Pressable>
                                 </View>
                             </View>
                         )}
 
-                        {activeTab === 'image' && (
+                        {activeTab === 'style' && selectedElement ? (
                             <View>
-                                <Pressable style={styles.actionBtn} onPress={pickImage}>
-                                    <ImageIcon size={20} color="#FFF" />
-                                    <Text style={styles.actionBtnText}>{backgroundImage ? 'Change Background Image' : 'Select Background Image'}</Text>
-                                </Pressable>
-                                {backgroundImage && (
-                                    <Pressable style={[styles.actionBtn, styles.actionBtnDanger]} onPress={() => setBackgroundImage(null)}>
-                                        <Text style={styles.actionBtnDangerText}>Remove Image</Text>
-                                    </Pressable>
-                                )}
-                            </View>
-                        )}
+                                <View style={styles.panelHeader}>
+                                    <Text style={styles.panelTitle}>Styling: {selectedElement.id}</Text>
+                                    <Pressable onPress={() => updateElement(selectedId, { scale: 1 })}><Text style={{ color: '#8A8D9F' }}>Reset Scale</Text></Pressable>
+                                </View>
 
-                        {activeTab === 'style' && (
-                            <View>
-                                <Text style={styles.controlSectionLabel}>Text Color</Text>
-                                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.colorRow}>
-                                    {COLORS.map(c => (
-                                        <Pressable key={`t-${c}`} onPress={() => setTextColor(c)} style={[styles.colorSwatch, { backgroundColor: c }, textColor === c && styles.colorSwatchActive]} />
+                                <Text style={styles.label}>Size Scale: {selectedElement.scale.toFixed(2)}x</Text>
+                                <View style={styles.sliderRow}>
+                                    <Pressable onPress={() => updateElement(selectedId, { scale: Math.max(0.1, selectedElement.scale - 0.1) })} style={styles.stepBtn}><Text style={{ color: '#FFF' }}>-</Text></Pressable>
+                                    <View style={styles.track}><View style={[styles.fill, { width: `${(selectedElement.scale / 3) * 100}%` }]} /></View>
+                                    <Pressable onPress={() => updateElement(selectedId, { scale: Math.min(3, selectedElement.scale + 0.1) })} style={styles.stepBtn}><Text style={{ color: '#FFF' }}>+</Text></Pressable>
+                                </View>
+
+                                <Text style={[styles.label, { marginTop: 20 }]}>Select Color (Presets)</Text>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.colorsRow} contentContainerStyle={{ paddingVertical: 10 }}>
+                                    {['#FFFFFF', '#000000', '#FC4C02', '#2D60FF', '#4ADE80', '#F2215A', '#FDE047', '#A855F7', '#EC4899', 'transparent'].map(c => (
+                                        <Pressable key={c} onPress={() => updateElement(selectedId, { color: c })} style={[styles.swatch, { backgroundColor: c === 'transparent' ? '#333' : c }, selectedElement.color === c && styles.activeSwatch]} />
                                     ))}
                                 </ScrollView>
 
-                                <Text style={[styles.controlSectionLabel, { marginTop: 20 }]}>Trace Color</Text>
-                                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.colorRow}>
-                                    {COLORS.map(c => (
-                                        <Pressable key={`m-${c}`} onPress={() => setMapColor(c)} style={[styles.colorSwatch, { backgroundColor: c }, mapColor === c && styles.colorSwatchActive]} />
+                                <Text style={[styles.label, { marginTop: 10 }]}>Precise Color (HSLA)</Text>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hueRow}>
+                                    {Array.from({ length: 36 }).map((_, i) => (
+                                        <Pressable key={i} onPress={() => {
+                                            const hsla = hexToHsla(selectedElement.color);
+                                            updateElement(selectedId, { color: hslaToHex(i * 10, hsla.s || 80, hsla.l || 50, hsla.a) });
+                                        }} style={[styles.hueChip, { backgroundColor: hslaToHex(i * 10, 80, 50) }]} />
                                     ))}
                                 </ScrollView>
 
-                                <Text style={[styles.controlSectionLabel, { marginTop: 20 }]}>Font Name</Text>
-                                <View style={styles.metricsGrid}>
-                                    {FONTS.map(f => (
-                                        <Pressable key={f} onPress={() => setFontFamily(f)} style={[styles.fontBtn, fontFamily === f && styles.fontBtnActive]}>
-                                            <Text style={[styles.fontBtnText, { fontFamily: f }, fontFamily === f && { color: '#FFF' }]}>{f}</Text>
-                                        </Pressable>
-                                    ))}
+                                <View style={styles.footerBtns}>
+                                    <Pressable style={styles.footerBtn}><Droplets size={16} color="#FFF" /><Text style={styles.btnText}>Eyedropper</Text></Pressable>
+                                    <Pressable onPress={() => setSelectedId(null)} style={[styles.footerBtn, { backgroundColor: '#2D3246' }]}><Text style={styles.btnText}>Deselect</Text></Pressable>
                                 </View>
                             </View>
-                        )}
+                        ) : activeTab === 'style' ? (
+                            <Text style={styles.emptyText}>Tap an element on the canvas to edit its style.</Text>
+                        ) : null}
 
+                        {activeTab === 'graph' && selectedElement?.type === 'graph' ? (
+                            <View>
+                                <Text style={styles.panelTitle}>Configure Merged Graph</Text>
+                                {['heartrate', 'altitude', 'velocity_smooth', 'cadence'].map(m => {
+                                    const metrics = selectedElement.metrics || [];
+                                    const isActive = metrics.some(x => x.name === m);
+                                    return (
+                                        <Pressable key={m} onPress={() => {
+                                            const next = isActive ? metrics.filter(x => x.name !== m) : [...metrics, { name: m, color: '#FFFFFF' }];
+                                            updateElement(selectedId, { metrics: next });
+                                        }} style={[styles.metricRow, isActive && styles.activeMetricRow]}>
+                                            <Text style={{ color: isActive ? '#FFF' : '#8A8D9F', fontWeight: 'bold' }}>{m.replace('_', ' ').toUpperCase()}</Text>
+                                            {isActive && (
+                                                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginLeft: 10 }}>
+                                                    {['#F2215A', '#2D60FF', '#4ADE80', '#FFFFFF'].map(c => (
+                                                        <Pressable key={c} onPress={() => {
+                                                            const next = metrics.map(x => x.name === m ? { ...x, color: c } : x);
+                                                            updateElement(selectedId, { metrics: next });
+                                                        }} style={[styles.smallSwatch, { backgroundColor: c }]} />
+                                                    ))}
+                                                </ScrollView>
+                                            )}
+                                            {!isActive && <Plus size={18} color="#4A4C59" />}
+                                        </Pressable>
+                                    );
+                                })}
+                            </View>
+                        ) : activeTab === 'graph' ? (
+                            <Text style={styles.emptyText}>Select a Graph element on the canvas to configure overlays.</Text>
+                        ) : null}
                     </View>
                 </View>
-
             </ScrollView>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#0A0A0E',
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingTop: Platform.OS === 'web' ? 24 : 60,
-        paddingHorizontal: 20,
-        paddingBottom: 16,
-    },
-    headerIconBtn: {
-        width: 44,
-        height: 44,
-        borderRadius: 14,
-        backgroundColor: '#1C1C24',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    headerTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#FFF',
-    },
-    scrollContent: {
-        paddingBottom: 60,
-    },
-    canvasWrapper: {
-        alignItems: 'center',
-        paddingTop: 10,
-        paddingBottom: 10,
-    },
-    canvas: {
-        backgroundColor: '#1C1C24',
-        borderRadius: 0,
-        overflow: 'hidden',
-        position: 'relative',
-    },
-    hintText: {
-        textAlign: 'center',
-        color: '#8A8D9F',
-        fontSize: 13,
-        marginBottom: 20,
-    },
-    statBlock: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 8,
-    },
-    overlayTitle: {
-        fontSize: 28,
-        fontWeight: '800',
-        textShadowColor: 'rgba(0, 0, 0, 0.75)',
-        textShadowOffset: { width: -1, height: 1 },
-        textShadowRadius: 10,
-        padding: 8,
-    },
-    overlayStatVal: {
-        fontSize: 22,
-        fontWeight: '800',
-        textShadowColor: 'rgba(0, 0, 0, 0.75)',
-        textShadowOffset: { width: -1, height: 1 },
-        textShadowRadius: 5
-    },
-    overlayStatLabel: {
-        fontSize: 12,
-        fontWeight: '600',
-        textTransform: 'uppercase',
-    },
-    editorControls: {
-        paddingHorizontal: 20,
-    },
-    tabsRow: {
-        flexDirection: 'row',
-        backgroundColor: '#1C1C24',
-        borderRadius: 16,
-        padding: 4,
-        marginBottom: 20,
-    },
-    tabBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        borderRadius: 12,
-        gap: 6,
-    },
-    tabBtnActive: {
-        backgroundColor: '#2D3246',
-    },
-    tabText: {
-        color: '#8A8D9F',
-        fontSize: 13,
-        fontWeight: '600',
-    },
-    tabTextActive: {
-        color: '#FFF',
-    },
-    tabContentPanel: {
-        backgroundColor: '#1C1C24',
-        borderRadius: 24,
-        padding: 20,
-    },
-    actionBtn: {
-        backgroundColor: '#2D60FF',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 16,
-        borderRadius: 16,
-        gap: 10,
-    },
-    actionBtnText: {
-        color: '#FFF',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    actionBtnDanger: {
-        backgroundColor: 'rgba(242, 33, 90, 0.1)',
-        marginTop: 12,
-        borderWidth: 1,
-        borderColor: 'rgba(242, 33, 90, 0.3)',
-    },
-    actionBtnDangerText: {
-        color: '#F2215A',
-        fontSize: 15,
-        fontWeight: '600',
-    },
-    controlSectionLabel: {
-        color: '#FFF',
-        fontSize: 15,
-        fontWeight: '600',
-        marginBottom: 12,
-    },
-    colorRow: {
-        flexDirection: 'row',
-        paddingBottom: 8,
-    },
-    colorSwatch: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        marginRight: 16,
-        borderWidth: 2,
-        borderColor: '#1C1C24',
-    },
-    colorSwatchActive: {
-        borderColor: '#FFF',
-        transform: [{ scale: 1.1 }],
-    },
-    ratiosGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 10,
-    },
-    ratioBtn: {
-        width: '47%',
-        backgroundColor: '#12131A',
-        paddingVertical: 14,
-        borderRadius: 12,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#2D3246',
-    },
-    ratioBtnActive: {
-        borderColor: '#2D60FF',
-        backgroundColor: 'rgba(45, 96, 255, 0.1)',
-    },
-    ratioBtnText: {
-        color: '#8A8D9F',
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    metricsGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 10,
-    },
-    metricToggleBtn: {
-        width: '47%',
-        flexDirection: 'row',
-        backgroundColor: '#12131A',
-        paddingVertical: 12,
-        paddingHorizontal: 12,
-        borderRadius: 12,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#2D3246',
-        gap: 8,
-    },
-    metricToggleBtnActive: {
-        borderColor: '#2D60FF',
-        backgroundColor: 'rgba(45, 96, 255, 0.1)',
-    },
-    metricToggleText: {
-        color: '#8A8D9F',
-        fontSize: 13,
-        fontWeight: '600',
-    },
-    fontBtn: {
-        width: '47%',
-        backgroundColor: '#12131A',
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#2D3246',
-    },
-    fontBtnActive: {
-        borderColor: '#2D60FF',
-        backgroundColor: 'rgba(45, 96, 255, 0.1)',
-    },
-    fontBtnText: {
-        color: '#8A8D9F',
-        fontSize: 14,
-    }
+    container: { flex: 1, backgroundColor: '#0A0A0E' },
+    loadingContainer: { flex: 1, backgroundColor: '#0A0A0E', alignItems: 'center', justifyContent: 'center' },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: Platform.OS === 'web' ? 20 : 60, paddingHorizontal: 20, paddingBottom: 15 },
+    iconBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#1C1C24', alignItems: 'center', justifyContent: 'center' },
+    headerTitle: { fontSize: 18, fontWeight: '800', color: '#FFF' },
+    canvasWrapper: { alignItems: 'center', marginVertical: 15 },
+    canvas: { borderRadius: 8, overflow: 'hidden', position: 'relative', borderWidth: 1, borderColor: '#2D3246' },
+    draggable: { position: 'absolute' },
+    selectedBorder: { borderWidth: 2, borderColor: '#2D60FF', borderRadius: 6, borderStyle: 'dashed' },
+    titleText: { fontSize: 24, fontWeight: '900', padding: 5, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 4 },
+    statVal: { fontSize: 20, fontWeight: '900' },
+    statLabel: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+    editor: { paddingHorizontal: 20 },
+    tabRow: { flexDirection: 'row', backgroundColor: '#1C1C24', borderRadius: 18, padding: 5, marginBottom: 15 },
+    tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 14 },
+    activeTab: { backgroundColor: '#2D3246' },
+    panel: { backgroundColor: '#1C1C24', borderRadius: 24, padding: 20, minHeight: 250 },
+    panelTitle: { color: '#FFF', fontSize: 14, fontWeight: '800', marginBottom: 15, textTransform: 'uppercase', letterSpacing: 1 },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    gridBtn: { flex: 1, minWidth: '45%', backgroundColor: '#12131A', padding: 15, borderRadius: 15, alignItems: 'center', borderWidth: 1, borderColor: '#2D3246' },
+    activeGridBtn: { borderColor: '#2D60FF', backgroundColor: 'rgba(45, 96, 255, 0.1)' },
+    gridBtnText: { color: '#8A8D9F', fontWeight: '700' },
+    actionRow: { flexDirection: 'row', gap: 10, marginTop: 15 },
+    fullBtn: { flex: 1, flexDirection: 'row', backgroundColor: '#12131A', padding: 15, borderRadius: 15, alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: '#2D3246' },
+    btnText: { color: '#FFF', fontWeight: '700', fontSize: 13 },
+    elementsList: { gap: 8 },
+    elementItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#12131A', padding: 15, borderRadius: 15, borderWidth: 1, borderColor: '#2D3246' },
+    activeElementItem: { borderColor: '#2D60FF' },
+    elementItemText: { color: '#8A8D9F', fontWeight: '700', fontSize: 12 },
+    addBtn: { backgroundColor: '#2D3246', padding: 15, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 },
+    panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+    label: { color: '#8A8D9F', fontSize: 12, fontWeight: '700', marginBottom: 8 },
+    sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    stepBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#12131A', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#2D3246' },
+    track: { flex: 1, height: 8, backgroundColor: '#12131A', borderRadius: 4, overflow: 'hidden' },
+    fill: { height: '100%', backgroundColor: '#2D60FF' },
+    colorsRow: { flexDirection: 'row' },
+    swatch: { width: 48, height: 48, borderRadius: 24, marginRight: 12, borderWidth: 2, borderColor: 'transparent' },
+    activeSwatch: { borderColor: '#FFF', transform: [{ scale: 1.1 }] },
+    hueRow: { flexDirection: 'row', marginTop: 5 },
+    hueChip: { width: 34, height: 34, borderRadius: 17, marginRight: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+    footerBtns: { flexDirection: 'row', gap: 10, marginTop: 20 },
+    footerBtn: { flex: 1, flexDirection: 'row', backgroundColor: '#2D60FF', padding: 15, borderRadius: 15, alignItems: 'center', justifyContent: 'center', gap: 8 },
+    metricRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#12131A', padding: 15, borderRadius: 15, marginBottom: 8, borderWidth: 1, borderColor: '#2D3246' },
+    activeMetricRow: { borderColor: '#2D60FF' },
+    smallSwatch: { width: 24, height: 24, borderRadius: 12, marginRight: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+    emptyText: { color: '#4A4C59', textAlign: 'center', marginTop: 50, fontSize: 14 },
+    loadingText: { color: '#FFF', marginTop: 10, fontWeight: '700' }
 });

@@ -52,6 +52,19 @@ const fetchActivities = async (accessToken) => {
     return filteredActivities;
 };
 
+const fetchActivityById = async (accessToken, activityId) => {
+    const url = `https://www.strava.com/api/v3/activities/${activityId}`;
+
+    const config = {
+        headers: {
+            Authorization: `Bearer ${accessToken}`
+        }
+    };
+
+    const response = await axios.get(url, config);
+    return response.data;
+};
+
 const fetchActivityStreams = async (accessToken, activityId, keys = 'time,distance,latlng,altitude,velocity_smooth,heartrate,cadence,watts,temp,moving,grade_smooth') => {
     const url = `https://www.strava.com/api/v3/activities/${activityId}/streams`;
 
@@ -73,5 +86,6 @@ module.exports = {
     getAuthUrl,
     exchangeCodeForToken,
     fetchActivities,
+    fetchActivityById,
     fetchActivityStreams
 };

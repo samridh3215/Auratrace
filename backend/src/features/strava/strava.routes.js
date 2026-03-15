@@ -12,6 +12,9 @@ router.get('/callback', stravaController.callback);
 // List authenticated user's activities
 router.get('/activities', stravaController.getActivities);
 
+// Get a single activity detail (for accurate calories, etc.)
+router.get('/activities/:id', stravaController.getActivityById);
+
 // Get specific activity stream
 router.get('/activities/:id/streams', stravaController.getActivityStreams);
 
