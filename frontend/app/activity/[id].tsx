@@ -245,37 +245,29 @@ export default function ActivityDetailScreen() {
                             <Text style={styles.statLabel}>Time</Text>
                         </View>
 
-                        {activity.average_speed ? (
-                            <View style={styles.statBox}>
-                                <Zap color="#8A8D9F" size={20} style={styles.statIcon} />
-                                <Text style={styles.statValue}>{formatPace(activity.average_speed)}</Text>
-                                <Text style={styles.statLabel}>Pace (/km)</Text>
-                            </View>
-                        ) : null}
+                        <View style={styles.statBox}>
+                            <Zap color="#8A8D9F" size={20} style={styles.statIcon} />
+                            <Text style={styles.statValue}>{activity.average_speed ? formatPace(activity.average_speed) : '--:--'}</Text>
+                            <Text style={styles.statLabel}>Pace (/km)</Text>
+                        </View>
 
-                        {activity.total_elevation_gain !== undefined ? (
-                            <View style={styles.statBox}>
-                                <MapIcon color="#8A8D9F" size={20} style={styles.statIcon} />
-                                <Text style={styles.statValue}>{activity.total_elevation_gain}m</Text>
-                                <Text style={styles.statLabel}>Elevation</Text>
-                            </View>
-                        ) : null}
+                        <View style={styles.statBox}>
+                            <MapIcon color="#8A8D9F" size={20} style={styles.statIcon} />
+                            <Text style={styles.statValue}>{activity.total_elevation_gain || 0}m</Text>
+                            <Text style={styles.statLabel}>Elevation</Text>
+                        </View>
 
-                        {activity.average_heartrate ? (
-                            <View style={styles.statBox}>
-                                <Heart color="#F2215A" size={20} style={styles.statIcon} />
-                                <Text style={styles.statValue}>{Math.round(activity.average_heartrate)}</Text>
-                                <Text style={styles.statLabel}>Avg HR</Text>
-                            </View>
-                        ) : null}
+                        <View style={styles.statBox}>
+                            <Heart color="#F2215A" size={20} style={styles.statIcon} />
+                            <Text style={styles.statValue}>{activity.average_heartrate ? Math.round(activity.average_heartrate) : '--'}</Text>
+                            <Text style={styles.statLabel}>Avg HR</Text>
+                        </View>
 
-                        {activity.calories ? (
-                            <View style={styles.statBox}>
-                                <Flame color="#FC4C02" size={20} style={styles.statIcon} />
-                                <Text style={styles.statValue}>{activity.calories}</Text>
-                                <Text style={styles.statLabel}>Calories</Text>
-                            </View>
-                        ) : null}
+                        <View style={styles.statBox}>
+                            <Flame color="#FC4C02" size={20} style={styles.statIcon} />
+                            <Text style={styles.statValue}>{activity.calories || '--'}</Text>
+                            <Text style={styles.statLabel}>Calories</Text>
+                        </View>
                     </View>
                 </View>
 
@@ -399,16 +391,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         flexWrap: 'wrap',
         justifyContent: 'space-between',
-        gap: 12,
+        rowGap: 16,
     },
     statBox: {
-        width: '48%',
-        backgroundColor: '#12131A',
-        padding: 16,
-        borderRadius: 16,
+        width: '32%',
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#1C1D26',
+        paddingVertical: 12,
     },
     statIcon: {
         marginBottom: 8,
