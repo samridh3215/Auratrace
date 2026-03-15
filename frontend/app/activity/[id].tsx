@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, Dimensions, ScrollView } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, Pressable, Platform, Dimensions, ScrollView, Animated, PanResponder } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Map as MapIcon, Info, Route, Flame, Heart, Zap, Play, Activity as ActivityIcon } from 'lucide-react-native';
 import Svg, { Polyline as SvgPolyline } from 'react-native-svg';
@@ -134,7 +134,56 @@ export default function ActivityDetailScreen() {
     const hasRoute = routeCoords.length > 0;
     const platform = Platform.OS;
     const windowWidth = Dimensions.get('window').width;
-    const mapHeight = Dimensions.get('window').height * 0.45;
+    const windowHeight = Dimensions.get('window').height;
+    const mapHeight = windowHeight * 0.45;
+
+    // DRAWER LOGIC
+    const panY = useRef(new Animated.Value(0)).current;
+    const currentPanY = useRef(0);
+
+    useEffect(() => {
+        const id = panY.addListener((state) => {
+            currentPanY.current = state.value;
+        });
+        return () => panY.removeListener(id);
+    }, [panY]);
+
+    const maxDrawerTranslation = -(mapHeight - 60);
+
+    const panResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponder: (_, gestureState) => {
+                // Ignore horizontal swipes and minor touches
+                return Math.abs(gestureState.dy) > 10;
+            },
+            onPanResponderGrant: () => {
+                panY.extractOffset();
+            },
+            onPanResponderMove: (_, gestureState) => {
+                panY.setValue(gestureState.dy);
+            },
+            onPanResponderRelease: (_, gestureState) => {
+                panY.flattenOffset();
+
+                // If velocity dragging up strongly, or user passed halfway
+                if (gestureState.vy < -0.5 || currentPanY.current < (maxDrawerTranslation / 2)) {
+                    Animated.spring(panY, {
+                        toValue: maxDrawerTranslation,
+                        useNativeDriver: true,
+                        bounciness: 0,
+                    }).start();
+                } else {
+                    // Snap back down
+                    Animated.spring(panY, {
+                        toValue: 0,
+                        useNativeDriver: true,
+                        bounciness: 0,
+                    }).start();
+                }
+            }
+        })
+    ).current;
 
     // Fit map to coordinates on load
     useEffect(() => {
@@ -219,58 +268,71 @@ export default function ActivityDetailScreen() {
                 </View>
             )}
 
-            <ScrollView
-                style={styles.detailsContainer}
-                contentContainerStyle={{ paddingBottom: 40 }}
-                showsVerticalScrollIndicator={false}
+            {/* Animated Bottom Drawer */}
+            <Animated.View
+                style={[
+                    styles.drawerContainer,
+                    { transform: [{ translateY: panY }] }
+                ]}
             >
-                <Text style={styles.sectionTitle}>Activity Metrics</Text>
-                <View style={styles.metricsGrid}>
-                    <View style={styles.statBox}>
-                        <Route color="#8A8D9F" size={20} style={styles.statIcon} />
-                        <Text style={styles.statValue}>{(activity.distance / 1000).toFixed(2)}</Text>
-                        <Text style={styles.statLabel}>Distance (km)</Text>
-                    </View>
-
-                    <View style={styles.statBox}>
-                        <Play color="#8A8D9F" size={20} style={styles.statIcon} />
-                        <Text style={styles.statValue}>{formatDuration(activity.moving_time)}</Text>
-                        <Text style={styles.statLabel}>Time</Text>
-                    </View>
-
-                    {activity.average_speed ? (
-                        <View style={styles.statBox}>
-                            <Zap color="#8A8D9F" size={20} style={styles.statIcon} />
-                            <Text style={styles.statValue}>{formatPace(activity.average_speed)}</Text>
-                            <Text style={styles.statLabel}>Pace (/km)</Text>
-                        </View>
-                    ) : null}
-
-                    {activity.total_elevation_gain !== undefined ? (
-                        <View style={styles.statBox}>
-                            <MapIcon color="#8A8D9F" size={20} style={styles.statIcon} />
-                            <Text style={styles.statValue}>{activity.total_elevation_gain}m</Text>
-                            <Text style={styles.statLabel}>Elevation</Text>
-                        </View>
-                    ) : null}
-
-                    {activity.average_heartrate ? (
-                        <View style={styles.statBox}>
-                            <Heart color="#F2215A" size={20} style={styles.statIcon} />
-                            <Text style={styles.statValue}>{Math.round(activity.average_heartrate)}</Text>
-                            <Text style={styles.statLabel}>Avg HR</Text>
-                        </View>
-                    ) : null}
-
-                    {activity.calories ? (
-                        <View style={styles.statBox}>
-                            <Flame color="#FC4C02" size={20} style={styles.statIcon} />
-                            <Text style={styles.statValue}>{activity.calories}</Text>
-                            <Text style={styles.statLabel}>Calories</Text>
-                        </View>
-                    ) : null}
+                {/* Drag Handle Area */}
+                <View style={styles.dragHandleArea} {...panResponder.panHandlers}>
+                    <View style={styles.dragHandle} />
                 </View>
-            </ScrollView>
+
+                <ScrollView
+                    style={styles.detailsContainer}
+                    contentContainerStyle={{ paddingBottom: 100 }}
+                    showsVerticalScrollIndicator={false}
+                >
+                    <Text style={styles.sectionTitle}>Activity Metrics</Text>
+                    <View style={styles.metricsGrid}>
+                        <View style={styles.statBox}>
+                            <Route color="#8A8D9F" size={20} style={styles.statIcon} />
+                            <Text style={styles.statValue}>{(activity.distance / 1000).toFixed(2)}</Text>
+                            <Text style={styles.statLabel}>Distance (km)</Text>
+                        </View>
+
+                        <View style={styles.statBox}>
+                            <Play color="#8A8D9F" size={20} style={styles.statIcon} />
+                            <Text style={styles.statValue}>{formatDuration(activity.moving_time)}</Text>
+                            <Text style={styles.statLabel}>Time</Text>
+                        </View>
+
+                        {activity.average_speed ? (
+                            <View style={styles.statBox}>
+                                <Zap color="#8A8D9F" size={20} style={styles.statIcon} />
+                                <Text style={styles.statValue}>{formatPace(activity.average_speed)}</Text>
+                                <Text style={styles.statLabel}>Pace (/km)</Text>
+                            </View>
+                        ) : null}
+
+                        {activity.total_elevation_gain !== undefined ? (
+                            <View style={styles.statBox}>
+                                <MapIcon color="#8A8D9F" size={20} style={styles.statIcon} />
+                                <Text style={styles.statValue}>{activity.total_elevation_gain}m</Text>
+                                <Text style={styles.statLabel}>Elevation</Text>
+                            </View>
+                        ) : null}
+
+                        {activity.average_heartrate ? (
+                            <View style={styles.statBox}>
+                                <Heart color="#F2215A" size={20} style={styles.statIcon} />
+                                <Text style={styles.statValue}>{Math.round(activity.average_heartrate)}</Text>
+                                <Text style={styles.statLabel}>Avg HR</Text>
+                            </View>
+                        ) : null}
+
+                        {activity.calories ? (
+                            <View style={styles.statBox}>
+                                <Flame color="#FC4C02" size={20} style={styles.statIcon} />
+                                <Text style={styles.statValue}>{activity.calories}</Text>
+                                <Text style={styles.statLabel}>Calories</Text>
+                            </View>
+                        ) : null}
+                    </View>
+                </ScrollView>
+            </Animated.View>
         </View>
     );
 }
@@ -334,6 +396,31 @@ const styles = StyleSheet.create({
         borderColor: '#2D3246',
         zIndex: 10,
     },
+    drawerContainer: {
+        height: Dimensions.get('window').height,
+        backgroundColor: '#0A0A0E',
+        marginTop: -20,
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.8,
+        shadowRadius: 15,
+        elevation: 10,
+        zIndex: 5,
+    },
+    dragHandleArea: {
+        width: '100%',
+        height: 36,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    dragHandle: {
+        width: 48,
+        height: 5,
+        borderRadius: 3,
+        backgroundColor: '#FFF',
+    },
     noMapContainer: {
         backgroundColor: '#12131A',
         justifyContent: 'center',
@@ -349,7 +436,7 @@ const styles = StyleSheet.create({
     },
     detailsContainer: {
         flex: 1,
-        padding: 24,
+        paddingHorizontal: 24,
     },
     sectionTitle: {
         fontSize: 20,
