@@ -15,9 +15,10 @@ requiredEnvVars.forEach((varName) => {
 });
 
 const app = require('./app');
+const logger = require('./utils/logger');
 
 const PORT = process.env.PORT || 8000;
 
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    logger.info(`Server started on port ${PORT} — log file: ${logger.LOG_FILE}`);
 });

@@ -3,13 +3,13 @@ title: Activity Cache (cache.ts)
 type: module
 tags: [module, frontend, state, cache]
 created: 2026-03-19 00:00
-updated: 2026-03-19 00:00
-related: ["[[module-dashboard]]", "[[module-activity-detail]]", "[[decision-2026-03-19-no-state-management-lib]]", "[[learning-activity-cache-pattern]]", "[[INDEX]]"]
+updated: 2026-03-19 18:00
+related: ["[[module-dashboard]]", "[[module-activity-detail]]", "[[decision-2026-03-19-no-state-management-lib]]", "[[learning-activity-cache-pattern]]", "[[issue-2026-03-19-cache-treated-as-route]]", "[[INDEX]]"]
 ---
 
 # Activity Cache
 
-**File path:** `Auratrace/app/cache.ts`
+**File path:** `Auratrace/utils/cache.ts` *(moved from `app/cache.ts` — see [[issue-2026-03-19-cache-treated-as-route]])*
 **Language/Framework:** TypeScript
 **Owned by / part of:** Frontend — cross-screen data layer
 
@@ -32,3 +32,5 @@ A simple global in-memory object that holds activity data fetched by the dashboa
 | Date & Time | Change Summary |
 |---|---|
 | 2026-03-19 00:00 | Initial documentation |
+| 2026-03-19 18:00 | Moved: `app/cache.ts` → `utils/cache.ts` (Expo Router treated it as a route, warned about missing default export) |
+| 2026-03-19 18:00 | Import paths updated in `dashboard.tsx` (`../utils/cache`) and `[id].tsx` (`../../utils/cache`) |

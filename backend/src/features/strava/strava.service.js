@@ -1,4 +1,5 @@
 const axios = require('axios');
+const logger = require('../../utils/logger');
 
 const getAuthUrl = (state) => {
     const clientId = process.env.STRAVA_CLIENT_ID;
@@ -25,8 +26,11 @@ const exchangeCodeForToken = async (code) => {
         grant_type: 'authorization_code'
     };
 
+    logger.info('Strava API → POST /oauth/token');
+    const start = Date.now();
     const response = await axios.post(url, payload);
-    return response.data; // Includes access_token, refresh_token, athlete data
+    logger.info(`Strava API ← POST /oauth/token - 200 - ${Date.now() - start}ms`);
+    return response.data;
 };
 
 const fetchActivities = async (accessToken) => {
@@ -41,14 +45,14 @@ const fetchActivities = async (accessToken) => {
         }
     };
 
+    logger.info('Strava API → GET /athlete/activities');
+    const start = Date.now();
     const response = await axios.get(url, config);
-
-    // Filter to only include specific types
     const allowedTypes = ['Run', 'Walk', 'Ride'];
     const filteredActivities = response.data.filter(activity =>
         allowedTypes.includes(activity.type)
     );
-
+    logger.info(`Strava API ← GET /athlete/activities - 200 - ${Date.now() - start}ms - ${filteredActivities.length} activities`);
     return filteredActivities;
 };
 
@@ -61,7 +65,10 @@ const fetchActivityById = async (accessToken, activityId) => {
         }
     };
 
+    logger.info(`Strava API → GET /activities/${activityId}`);
+    const start = Date.now();
     const response = await axios.get(url, config);
+    logger.info(`Strava API ← GET /activities/${activityId} - 200 - ${Date.now() - start}ms`);
     return response.data;
 };
 
@@ -78,7 +85,10 @@ const fetchActivityStreams = async (accessToken, activityId, keys = 'time,distan
         }
     };
 
+    logger.info(`Strava API → GET /activities/${activityId}/streams`);
+    const start = Date.now();
     const response = await axios.get(url, config);
+    logger.info(`Strava API ← GET /activities/${activityId}/streams - 200 - ${Date.now() - start}ms`);
     return response.data;
 };
 

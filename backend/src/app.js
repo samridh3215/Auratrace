@@ -3,6 +3,8 @@ const cors = require('cors');
 const session = require('express-session');
 const v1Routes = require('./api/v1');
 const v2Routes = require('./api/v2');
+const logger = require('./utils/logger');
+const requestLogger = require('./middleware/requestLogger');
 
 const app = express();
 
@@ -13,6 +15,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(requestLogger);
 
 app.use(session({
     secret: process.env.SESSION_SECRET || 'secret',
@@ -31,7 +34,7 @@ app.get('/', (req, res) => {
 });
 
 app.use((err, req, res, next) => {
-    console.error(err.stack);
+    logger.error(`Unhandled error on ${req.method} ${req.originalUrl}: ${err.message}`, err);
     res.status(500).json({ error: 'Internal Server Error' });
 });
 

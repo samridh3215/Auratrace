@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const stravaService = require('./strava.service');
+const logger = require('../../utils/logger');
 
 const login = (req, res) => {
     // The frontend should send its base redirect URL (e.g., http://localhost:8081 or exp://192.168.1.5:8081)
@@ -37,13 +38,10 @@ const callback = async (req, res) => {
 
         res.redirect(`${cleanBaseUrl}/dashboard?token=${userToken}`);
     } catch (err) {
-        console.error('--- STRAVA AUTH ERROR ---');
-        console.error('Message:', err.message);
+        logger.error(`Strava auth callback failed: ${err.message}`, err);
         if (err.response) {
-            console.error('Strava API Response Data:', err.response.data);
-            console.error('Strava API Response Status:', err.response.status);
+            logger.error(`Strava API response: ${err.response.status} - ${JSON.stringify(err.response.data)}`);
         }
-        console.error('--------------------------');
         res.status(500).json({
             error: 'Internal Server Error during authentication',
             details: err.message,
@@ -79,9 +77,8 @@ const getActivities = async (req, res) => {
         const activities = await stravaService.fetchActivities(accessToken);
         res.json({ count: activities.length, activities });
     } catch (err) {
-        console.error('Error fetching Strava activities:', err.message);
+        logger.error(`Failed to fetch activities: ${err.message}`, err);
         if (err.response && err.response.status === 401) {
-            // Token likely expired on Strava's end (they expire every 6 hours)
             return res.status(401).json({ error: 'Strava access token expired' });
         }
         res.status(500).json({ error: 'Failed to fetch activities from Strava' });
@@ -112,7 +109,7 @@ const getActivityById = async (req, res) => {
         const activity = await stravaService.fetchActivityById(accessToken, id);
         res.json(activity);
     } catch (err) {
-        console.error(`Error fetching Strava activity ${req.params.id}:`, err.message);
+        logger.error(`Failed to fetch activity ${req.params.id}: ${err.message}`, err);
         if (err.response && err.response.status === 401) {
             return res.status(401).json({ error: 'Strava access token expired' });
         }
@@ -144,7 +141,7 @@ const getActivityStreams = async (req, res) => {
         const streams = await stravaService.fetchActivityStreams(accessToken, id);
         res.json(streams);
     } catch (err) {
-        console.error(`Error fetching Strava streams for activity ${req.params.id}:`, err.message);
+        logger.error(`Failed to fetch streams for activity ${req.params.id}: ${err.message}`, err);
         if (err.response && err.response.status === 401) {
             return res.status(401).json({ error: 'Strava access token expired' });
         }
@@ -158,7 +155,7 @@ const getActivityStreams = async (req, res) => {
 const logout = (req, res) => {
     req.session.destroy((err) => {
         if (err) {
-            console.error('Error destroying session during logout:', err);
+            logger.error(`Session destroy failed during logout: ${err.message}`, err);
             return res.status(500).json({ error: 'Could not log out' });
         }
         res.json({ message: 'Successfully logged out' });
