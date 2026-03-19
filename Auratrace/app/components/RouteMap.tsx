@@ -1,5 +1,5 @@
 import React, { forwardRef } from 'react';
-import MapView, { Polyline } from 'react-native-maps';
+import MapView, { Polyline, UrlTile, PROVIDER_DEFAULT } from 'react-native-maps';
 
 type RouteMapProps = {
     style: any;
@@ -13,8 +13,14 @@ const RouteMap = forwardRef<MapView, RouteMapProps>(({ style, initialRegion, rou
             ref={ref}
             style={style}
             initialRegion={initialRegion}
-            userInterfaceStyle="dark"
+            provider={PROVIDER_DEFAULT}
+            mapType="none"
         >
+            <UrlTile
+                urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                maximumZ={19}
+                tileSize={256}
+            />
             <Polyline
                 coordinates={routeCoords}
                 strokeColor="#FC4C02"

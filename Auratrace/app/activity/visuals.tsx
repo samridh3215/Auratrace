@@ -9,7 +9,6 @@ import {
     Share as ShareIcon,
     Trash2,
     Layers,
-    Droplets,
     Grid,
     Plus,
     ChevronRight,
@@ -125,7 +124,7 @@ const METRIC_UNITS: Record<string, string> = {
 };
 
 // --- Advanced Color Picker ---
-const AdvancedColorPicker = ({ color, onColorChange, onTogglePicker }: { color: string, onColorChange: (c: string) => void, onTogglePicker?: () => void }) => {
+const AdvancedColorPicker = ({ color, onColorChange }: { color: string, onColorChange: (c: string) => void }) => {
     const hsl = hexToHsla(color);
     const [h, setH] = useState(hsl.h);
     const [s, setS] = useState(hsl.s);
@@ -265,12 +264,6 @@ const AdvancedColorPicker = ({ color, onColorChange, onTogglePicker }: { color: 
                     <Text style={styles.cpOkText}>SET</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                    onPress={onTogglePicker}
-                    style={[styles.cpOkBtn, { backgroundColor: '#12131A', borderWidth: 1, borderColor: '#333' }]}
-                >
-                    <Droplets size={16} color="#FFF" />
-                </TouchableOpacity>
             </View>
         </View>
     );
@@ -587,8 +580,11 @@ const DraggableWrapper = ({ element, selected, onSelect, onMove, onScale, onRota
 };
 
 export default function VisualsScreen() {
-    const { id } = useLocalSearchParams<{ id: string }>();
+    const params = useLocalSearchParams<{ id?: string; activityId?: string }>();
+    const id = params.activityId || params.id;
     const router = useRouter();
+
+    console.log('[visuals] params:', JSON.stringify(params), 'resolved id:', id);
     const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
     const [activity, setActivity] = useState<any>(null);
@@ -610,24 +606,9 @@ export default function VisualsScreen() {
     const [showAddMenu, setShowAddMenu] = useState(false);
     const [activeTab, setActiveTab] = useState<'layout' | 'elements' | 'style' | null>(null);
     const [gridType, setGridType] = useState<'none' | 'thirds' | 'squares' | 'golden'>('none');
-    const [pickingColor, setPickingColor] = useState(false);
-    const [canvasLayout, setCanvasLayout] = useState({ x: 0, y: 0 });
-    const [sampledHex, setSampledHex] = useState('#FFF');
-    const [pickingTarget, setPickingTarget] = useState<'primary' | 'secondary' | 'single'>('single');
-
-    const crosshairX = useSharedValue(screenWidth / 2);
-    const crosshairY = useSharedValue(screenHeight / 2);
 
     const viewShotRef = useRef<any>(null);
     const canvasViewRef = useRef<View>(null);
-
-    useEffect(() => {
-        if (pickingColor) {
-            canvasViewRef.current?.measureInWindow((x, y) => {
-                setCanvasLayout({ x, y });
-            });
-        }
-    }, [pickingColor]);
 
     // Initial Load
     useEffect(() => {
@@ -648,11 +629,18 @@ export default function VisualsScreen() {
                     setRouteCoords(points.map(p => ({ latitude: p[0], longitude: p[1] })));
                 }
 
-                const streamRes = await axios.get(`${API_URL}/strava/activities/${id}/streams`, { headers: { Authorization: `Bearer ${token}` } });
-                setStreamsData(streamRes.data);
-
                 if (elements.length === 0) {
                     setShowSetup(true);
+                }
+
+                try {
+                    const streamRes = await axios.get(`${API_URL}/strava/activities/${id}/streams`, { headers: { Authorization: `Bearer ${token}` } });
+                    setStreamsData(streamRes.data);
+                } catch (streamErr: any) {
+                    // 404 is expected for manual/GPS-less activities — not an error
+                    if (streamErr?.response?.status !== 404) {
+                        console.error('[visuals] streams fetch failed:', streamErr);
+                    }
                 }
             } catch (err) { console.error(err); } finally { setLoading(false); }
         };
@@ -681,29 +669,6 @@ export default function VisualsScreen() {
 
         return { canvasWidth: targetW, canvasHeight: targetH };
     }, [aspectRatio, screenWidth, screenHeight]);
-
-    const animatedCrosshairStyle = useAnimatedStyle(() => ({
-        left: crosshairX.value,
-        top: crosshairY.value
-    }));
-
-    const animatedMagnifierStyle = useAnimatedStyle(() => ({
-        left: crosshairX.value - 50,
-        top: crosshairY.value - 120
-    }));
-
-    const animatedMagnifierImageStyle = useAnimatedStyle(() => {
-        const scale = 5;
-        // Image coordinates are relative to the canvas
-        const imgX = crosshairX.value - canvasLayout.x;
-        const imgY = crosshairY.value - canvasLayout.y;
-        return {
-            width: canvasWidth * scale,
-            height: canvasHeight * scale,
-            left: -imgX * scale + 50,
-            top: -imgY * scale + 50,
-        };
-    }, [canvasLayout, canvasWidth, canvasHeight]); // Re-run if layout changes
 
     const mapPath = useMemo(() => {
         if (routeCoords.length === 0) return "";
@@ -786,27 +751,6 @@ export default function VisualsScreen() {
                 alert('Visual saved to your library!');
             } catch (err) { console.error(err); } finally { setGridType(currentGrid); }
         }, 100);
-    };
-
-    const sampleColorWeb = (x: number, y: number) => {
-        if (Platform.OS !== 'web') return;
-        try {
-            const canvas = document.createElement('canvas');
-            const img = document.querySelector('img');
-            if (!img) return;
-            canvas.width = img.clientWidth;
-            canvas.height = img.clientHeight;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return;
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            // Calculate relative to canvas image
-            const rect = img.getBoundingClientRect();
-            const relX = (x - rect.left) * (img.naturalWidth / rect.width);
-            const relY = (y - rect.top) * (img.naturalHeight / rect.height);
-            const data = ctx.getImageData(relX, relY, 1, 1).data;
-            const hex = `#${((1 << 24) + (data[0] << 16) + (data[1] << 8) + data[2]).toString(16).slice(1)}`;
-            setSampledHex(hex.toUpperCase());
-        } catch (e) { console.error("Web sampling failed", e); }
     };
 
     if (loading || !activity) {
@@ -1147,12 +1091,6 @@ export default function VisualsScreen() {
                                             <Text style={styles.modalSub}>COLOR CUSTOMIZATION</Text>
                                             <AdvancedColorPicker
                                                 color={selectedElement.isOverlay ? (selectedElement.colors?.[0] || '#FFF') : selectedElement.color}
-                                                onTogglePicker={() => {
-                                                    setSampledHex(selectedElement.isOverlay ? (selectedElement.colors?.[0] || '#FFF') : selectedElement.color);
-                                                    setPickingTarget(selectedElement.isOverlay ? 'primary' : 'single');
-                                                    setActiveTab(null);
-                                                    setPickingColor(true);
-                                                }}
                                                 onColorChange={(c) => {
                                                     if (selectedElement.isOverlay) {
                                                         const next = [...(selectedElement.colors || ['#FFF', '#FFF', '#FFF'])];
@@ -1169,12 +1107,6 @@ export default function VisualsScreen() {
                                                     <Text style={styles.modalSub}>SECONDARY METRIC COLOR</Text>
                                                     <AdvancedColorPicker
                                                         color={selectedElement.colors?.[1] || '#FFF'}
-                                                        onTogglePicker={() => {
-                                                            setSampledHex(selectedElement.colors?.[1] || '#FFF');
-                                                            setPickingTarget('secondary');
-                                                            setActiveTab(null);
-                                                            setPickingColor(true);
-                                                        }}
                                                         onColorChange={(c) => {
                                                             const next = [...(selectedElement.colors || ['#FFF', '#FFF', '#FFF'])];
                                                             next[1] = c;
@@ -1223,89 +1155,6 @@ export default function VisualsScreen() {
                     </View>
                 )}
 
-                {pickingColor && (
-                    <View style={[StyleSheet.absoluteFill, { zIndex: 10000 }]}>
-                        <GestureDetector
-                            gesture={Gesture.Pan()
-                                .onUpdate((e) => {
-                                    crosshairX.value = e.x;
-                                    crosshairY.value = e.y;
-                                })
-                                .onEnd((e) => {
-                                    if (Platform.OS === 'web') {
-                                        runOnJS(sampleColorWeb)(e.x, e.y);
-                                    }
-                                })
-                            }
-                        >
-                            <View style={StyleSheet.absoluteFill}>
-                                <Animated2.View style={[{ position: 'absolute', width: 40, height: 40, marginLeft: -20, marginTop: -20, alignItems: 'center', justifyContent: 'center', zIndex: 100 }, animatedCrosshairStyle]}>
-                                    <View style={{ position: 'absolute', width: 1, height: 40, backgroundColor: '#FFF' }} />
-                                    <View style={{ position: 'absolute', height: 1, width: 40, backgroundColor: '#FFF' }} />
-                                    <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: '#FFF' }} />
-                                </Animated2.View>
-
-                                {backgroundImage && (
-                                    <Animated2.View style={[{ position: 'absolute', width: 100, height: 100, borderRadius: 50, borderWidth: 4, borderColor: '#FFF', overflow: 'hidden', backgroundColor: '#000', marginBottom: 20 }, animatedMagnifierStyle]}>
-                                        <Animated2.Image
-                                            source={{ uri: backgroundImage }}
-                                            style={[{ position: 'absolute' }, animatedMagnifierImageStyle]}
-                                        />
-                                        <View style={{ position: 'absolute', left: 45, top: 45, width: 10, height: 10, borderRadius: 5, borderWidth: 1, borderColor: '#FF0' }} />
-                                    </Animated2.View>
-                                )}
-
-                                <View style={{ position: 'absolute', bottom: 40, left: 20, right: 20, backgroundColor: 'rgba(28,28,36,0.95)', padding: 20, borderRadius: 24, alignItems: 'center' }}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 15 }}>
-                                        <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 13 }}>TARGET COLOR</Text>
-                                        <View style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: sampledHex, borderWidth: 1, borderColor: '#333' }} />
-                                        <TextInput
-                                            style={[styles.cpInput, { width: 100, flex: 0 }]}
-                                            value={sampledHex}
-                                            onChangeText={setSampledHex}
-                                            autoCapitalize="characters"
-                                        />
-                                    </View>
-                                    <View style={{ flexDirection: 'row', gap: 10 }}>
-                                        <TouchableOpacity
-                                            onPress={() => setPickingColor(false)}
-                                            style={{ backgroundColor: '#12131A', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: '#333' }}
-                                        >
-                                            <Text style={{ color: '#FFF', fontWeight: '900' }}>CANCEL</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                            onPress={() => {
-                                                if (!selectedId) {
-                                                    setPickingColor(false);
-                                                    return;
-                                                }
-                                                setElements(prev => prev.map(el => {
-                                                    if (el.id !== selectedId) return el;
-                                                    if (pickingTarget === 'primary') {
-                                                        const next = [...(el.colors || ['#FFF', '#FFF', '#FFF'])];
-                                                        next[0] = sampledHex;
-                                                        return { ...el, colors: next };
-                                                    } else if (pickingTarget === 'secondary') {
-                                                        const next = [...(el.colors || ['#FFF', '#FFF', '#FFF'])];
-                                                        next[1] = sampledHex;
-                                                        return { ...el, colors: next };
-                                                    } else {
-                                                        return { ...el, color: sampledHex };
-                                                    }
-                                                }));
-                                                setPickingColor(false);
-                                                setActiveTab('style');
-                                            }}
-                                            style={{ backgroundColor: '#2D60FF', paddingHorizontal: 30, paddingVertical: 12, borderRadius: 16 }}
-                                        >
-                                            <Text style={{ color: '#FFF', fontWeight: '900' }}>APPLY COLOR</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                </View>
-                            </View>
-                        </GestureDetector>
-                    </View>
-                )}
             </View>
         </GestureHandlerRootView>
     );

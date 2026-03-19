@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Activity as ActivityIcon, Bike, Footprints, Clock, Flame, Heart, ChevronLeft, Settings, Navigation, Route } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import { GlobalActivityCache } from './cache';
+import { GlobalActivityCache } from '../utils/cache';
 
 // Types
 type ActivityData = {

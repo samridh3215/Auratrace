@@ -4,8 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Zap, Target, Timer, Maximize, Activity, Navigation, Mountain, Flame, Info, Map as MapIcon, Route, Heart, Play, Activity as ActivityIcon } from 'lucide-react-native';
 import Svg, { Polyline as SvgPolyline } from 'react-native-svg';
 import polylineLib from '@mapbox/polyline';
-import RouteMap from '../components/RouteMap';
-import { GlobalActivityCache } from '../cache';
+import { GlobalActivityCache } from '../../utils/cache';
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { LineChart } from 'react-native-chart-kit';
@@ -114,11 +113,8 @@ const sampleFixed = (data: number[], count: number = 50) => {
 export default function ActivityDetailScreen() {
     const { id, itemData } = useLocalSearchParams<{ id: string, itemData?: string }>();
     const router = useRouter();
-    const mapRef = useRef<any>(null);
     const [activity, setActivity] = useState<ActivityData | null>(null);
     const [routeCoords, setRouteCoords] = useState<{ latitude: number, longitude: number }[]>([]);
-
-    const [viewMode, setViewMode] = useState<'map' | 'trace'>('trace');
 
     // Charts logic
     const [streamsLoaded, setStreamsLoaded] = useState(false);
@@ -163,7 +159,7 @@ export default function ActivityDetailScreen() {
 
     useEffect(() => {
         const fetchDetailedActivity = async () => {
-            if (!id) return;
+            if (!id || isNaN(Number(id))) return;
             try {
                 const token = Platform.OS === 'web'
                     ? localStorage.getItem('user_token')
@@ -215,22 +211,8 @@ export default function ActivityDetailScreen() {
     }, [id, itemData]);
 
     const hasRoute = routeCoords.length > 0;
-    const platform = Platform.OS;
     const windowWidth = Dimensions.get('window').width;
     const mapHeight = Dimensions.get('window').height * 0.40;
-
-    // Fit map to coordinates on load
-    useEffect(() => {
-        if (hasRoute && viewMode === 'map' && mapRef.current && platform !== 'web') {
-            // Small delay to ensure map has mounted and sized
-            setTimeout(() => {
-                mapRef.current?.fitToCoordinates(routeCoords, {
-                    edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-                    animated: true,
-                });
-            }, 300);
-        }
-    }, [hasRoute, routeCoords, viewMode, platform]);
 
     if (!activity) {
         return (
@@ -257,57 +239,27 @@ export default function ActivityDetailScreen() {
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
-                {/* 1. Map/Trace Card */}
+                {/* 1. Route Trace Card */}
                 <View style={styles.card}>
-                    {hasRoute && platform !== 'web' ? (
+                    {hasRoute ? (
                         <View style={[styles.mapContainer, { height: mapHeight }]}>
-                            {viewMode === 'map' ? (
-                                <RouteMap
-                                    ref={mapRef}
-                                    style={styles.map}
-                                    initialRegion={{
-                                        latitude: routeCoords[0].latitude,
-                                        longitude: routeCoords[0].longitude,
-                                        latitudeDelta: 0.05,
-                                        longitudeDelta: 0.05,
-                                    }}
-                                    routeCoords={routeCoords}
-                                />
-                            ) : (
-                                <View style={[styles.traceContainer, { width: '100%', height: mapHeight }]}>
-                                    <Svg width="100%" height="100%">
-                                        <SvgPolyline
-                                            points={normalizeCoordsForSvg(routeCoords, windowWidth - 48, mapHeight, 30)}
-                                            fill="none"
-                                            stroke="#FC4C02"
-                                            strokeWidth="4"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                        />
-                                    </Svg>
-                                </View>
-                            )}
-
-                            {/* View Toggle Button */}
-                            <Pressable
-                                style={styles.toggleButton}
-                                onPress={() => setViewMode(prev => prev === 'map' ? 'trace' : 'map')}
-                            >
-                                {viewMode === 'map' ? (
-                                    <ActivityIcon color="#FFF" size={20} />
-                                ) : (
-                                    <MapIcon color="#FFF" size={20} />
-                                )}
-                            </Pressable>
+                            <View style={[styles.traceContainer, { width: '100%', height: mapHeight }]}>
+                                <Svg width="100%" height="100%">
+                                    <SvgPolyline
+                                        points={normalizeCoordsForSvg(routeCoords, windowWidth - 48, mapHeight, 30)}
+                                        fill="none"
+                                        stroke="#FC4C02"
+                                        strokeWidth="4"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    />
+                                </Svg>
+                            </View>
                         </View>
                     ) : (
                         <View style={[styles.mapContainer, styles.noMapContainer, { height: mapHeight }]}>
                             <Route size={48} color="#4A4C59" />
-                            <Text style={styles.noMapText}>
-                                {platform === 'web'
-                                    ? "Map preview is not supported on web."
-                                    : "No GPS route available for this activity."}
-                            </Text>
+                            <Text style={styles.noMapText}>No GPS route available for this activity.</Text>
                         </View>
                     )}
                 </View>
@@ -473,7 +425,7 @@ export default function ActivityDetailScreen() {
             <View style={styles.footer}>
                 <Pressable
                     style={styles.createVisualsButton}
-                    onPress={() => router.push({ pathname: '/activity/visuals', params: { id: activity.id } })}
+                    onPress={() => router.push({ pathname: '/activity/visuals', params: { activityId: String(activity.id) } })}
                 >
                     <Text style={styles.createVisualsText}>Create Visuals</Text>
                 </Pressable>
